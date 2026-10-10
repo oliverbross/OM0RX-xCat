@@ -134,6 +134,47 @@ struct RemoteAgentTests {
         #expect(throws: (any Error).self) { try RemoteAgentEndpoint("https://station.example/?token=secret") }
     }
 
+    @Test func readsAndWritesAuthenticatedRemoteConfiguration() async throws {
+        var configurationValue = RemoteStationConfiguration.placeholder
+        configurationValue.flex.host = "192.168.0.199"
+        configurationValue.policy.amplifierDriveW["20m"] = 25
+        let encoded = try JSONEncoder().encode(configurationValue)
+        let object = try #require(try JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        let responseData = try JSONSerialization.data(withJSONObject: [
+            "success": true,
+            "config": object,
+            "restart_required": true,
+        ])
+        RemoteAgentURLProtocol.recorder.reset(stateData: Data(Self.safeState.utf8))
+        RemoteAgentURLProtocol.recorder.setConfigData(responseData)
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [RemoteAgentURLProtocol.self]
+        let session = URLSession(configuration: sessionConfiguration)
+        let client = try RemoteAgentClient(
+            baseURL: "https://station.invalid",
+            token: "test-credential",
+            session: session
+        )
+
+        var loaded = try await client.fetchConfiguration()
+        #expect(loaded.flex.host == "192.168.0.199")
+        loaded.policy.amplifierDriveW["20m"] = 30
+        _ = try await client.saveConfiguration(loaded)
+        session.invalidateAndCancel()
+
+        let requests = RemoteAgentURLProtocol.recorder.snapshot().filter { $0.url?.path == "/api/v1/config" }
+        #expect(requests.count == 2)
+        #expect(requests[0].httpMethod == "GET")
+        #expect(requests[1].httpMethod == "PUT")
+        let body = try JSONEncoder().encode(RemoteConfigUpdateRequest(config: loaded))
+        let bodyObject = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let savedConfig = try #require(bodyObject["config"] as? [String: Any])
+        let policy = try #require(savedConfig["policy"] as? [String: Any])
+        let drive = try #require(policy["amplifier_drive_w"] as? [String: Int])
+        #expect(drive["20m"] == 30)
+        #expect(String(data: body, encoding: .utf8)?.contains("test-credential") == false)
+    }
+
     private func waitForStateRequestCount(_ count: Int) async -> Bool {
         for _ in 0..<100 {
             if RemoteAgentURLProtocol.recorder.snapshot().count >= count { return true }
@@ -211,6 +252,7 @@ private final class RequestRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var requests: [URLRequest] = []
     private var stateData = Data(RemoteAgentTests.safeState.utf8)
+    private var configData = Data()
 
     func append(_ request: URLRequest) {
         lock.withLock { requests.append(request) }
@@ -227,6 +269,14 @@ private final class RequestRecorder: @unchecked Sendable {
         lock.withLock { requests }
     }
 
+    func setConfigData(_ data: Data) {
+        lock.withLock { configData = data }
+    }
+
+    func currentConfigData() -> Data {
+        lock.withLock { configData }
+    }
+
     func currentStateData() -> Data {
         lock.withLock { stateData }
     }
@@ -237,7 +287,7 @@ private final class RemoteAgentURLProtocol: URLProtocol, @unchecked Sendable {
 
     override class func canInit(with request: URLRequest) -> Bool {
         request.url?.scheme == "https"
-            && ["/api/v1/state", "/api/v1/commands"].contains(request.url?.path ?? "")
+            && ["/api/v1/state", "/api/v1/commands", "/api/v1/config"].contains(request.url?.path ?? "")
     }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -257,6 +307,8 @@ private final class RemoteAgentURLProtocol: URLProtocol, @unchecked Sendable {
         let data: Data
         if request.url?.path == "/api/v1/commands" {
             data = Data("{\"success\":true}".utf8)
+        } else if request.url?.path == "/api/v1/config" {
+            data = Self.recorder.currentConfigData()
         } else {
             data = Self.recorder.currentStateData()
         }

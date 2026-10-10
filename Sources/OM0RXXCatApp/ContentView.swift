@@ -1,13 +1,17 @@
+import AppKit
 import SwiftUI
 import XCatCore
 
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
     @State private var selectedTab: WorkspaceTab = .status
+    @State private var selectedSpotFeed: SpotFeed = .logbook
 
     private enum WorkspaceTab: Hashable {
         case status
         case activity
+        case spots
+        case station
         case configuration
     }
 
@@ -31,6 +35,12 @@ struct ContentView: View {
                 activityTab
                     .tabItem { Label("Activity", systemImage: "list.bullet.rectangle") }
                     .tag(WorkspaceTab.activity)
+                spotsTab
+                    .tabItem { Label("Spots", systemImage: "scope") }
+                    .tag(WorkspaceTab.spots)
+                stationTab
+                    .tabItem { Label("Station", systemImage: "antenna.radiowaves.left.and.right.circle") }
+                    .tag(WorkspaceTab.station)
                 configurationTab
                     .tabItem { Label("Configuration", systemImage: "slider.horizontal.3") }
                     .tag(WorkspaceTab.configuration)
@@ -316,6 +326,397 @@ struct ContentView: View {
         }
         .padding(.top, Layout.compact)
         .disabled(model.isRunning)
+    }
+
+    private var spotsTab: some View {
+        VStack(alignment: .leading, spacing: Layout.compact) {
+            HStack(alignment: .top, spacing: Layout.standard) {
+                GroupBox("RUMlog inputs") {
+                    Grid(alignment: .leading, horizontalSpacing: Layout.standard, verticalSpacing: Layout.compact) {
+                        GridRow {
+                            Toggle("Enable", isOn: $model.configuration.spotBridge.enabled)
+                                .toggleStyle(.checkbox)
+                                .onChange(of: model.configuration.spotBridge.enabled) { _, _ in
+                                    model.restartSpotBridge()
+                                }
+                            Text(model.spotBridgeStatus)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        GridRow {
+                            Text("Logbook UDP")
+                                .foregroundStyle(.secondary)
+                            TextField("Port", value: $model.configuration.spotBridge.logbookPort, format: .number)
+                                .frame(width: 88)
+                        }
+                        GridRow {
+                            Text("Contest UDP")
+                                .foregroundStyle(.secondary)
+                            TextField("Port", value: $model.configuration.spotBridge.contestPort, format: .number)
+                                .frame(width: 88)
+                        }
+                    }
+                    .padding(Layout.tight)
+                }
+                .frame(maxWidth: .infinity)
+
+                GroupBox("Live activity") {
+                    VStack(alignment: .leading, spacing: Layout.compact) {
+                        HStack(spacing: Layout.standard) {
+                            spotMetric("Received", model.spotsReceived)
+                            spotMetric("Forwarded", model.spotsForwarded)
+                            spotMetric("Rejected", model.spotsRejected)
+                        }
+                        Divider()
+                        Text(model.lastSpotSummary)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(Layout.tight)
+                }
+                .frame(maxWidth: .infinity)
+            }
+
+            HStack {
+                Text("Spot styling")
+                    .font(.headline)
+                Spacer()
+                Picker("Rule set", selection: $selectedSpotFeed) {
+                    ForEach(SpotFeed.allCases, id: \.self) { feed in
+                        Text(feed.rawValue).tag(feed)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 220)
+            }
+
+            GroupBox {
+                Grid(alignment: .leading, horizontalSpacing: Layout.standard, verticalSpacing: 6) {
+                    GridRow {
+                        Text("Category").foregroundStyle(.secondary)
+                        Text("Priority").foregroundStyle(.secondary)
+                        Text("Color").foregroundStyle(.secondary)
+                        Text("Lifetime").foregroundStyle(.secondary)
+                    }
+                    Divider().gridCellColumns(4)
+                    ForEach(DXSpotCategory.categories(for: selectedSpotFeed), id: \.self) { category in
+                        GridRow {
+                            Text(category.title)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Picker("Priority", selection: spotPriorityBinding(category)) {
+                                ForEach(1...5, id: \.self) { Text("Priority \($0)").tag($0) }
+                            }
+                            .labelsHidden()
+                            .accessibilityLabel("\(category.title) priority")
+                            .frame(width: 116)
+                            ColorPicker("Color", selection: spotColorBinding(category), supportsOpacity: false)
+                                .labelsHidden()
+                                .accessibilityLabel("\(category.title) color")
+                                .frame(width: 44)
+                            Picker("Lifetime", selection: spotLifetimeBinding(category)) {
+                                ForEach([180, 300, 600, 900, 1_200, 1_800, 3_600], id: \.self) {
+                                    Text(lifetimeLabel($0)).tag($0)
+                                }
+                            }
+                            .labelsHidden()
+                            .accessibilityLabel("\(category.title) lifetime")
+                            .frame(width: 110)
+                        }
+                    }
+                }
+                .padding(Layout.tight)
+            }
+
+            HStack {
+                Label("Spot markers only — this bridge never keys PTT or transmits RF.", systemImage: "shield.checkered")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(model.isRunning ? "Apply & Restart Listener" : "Save Spot Settings") {
+                    model.restartSpotBridge()
+                }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.top, Layout.compact)
+    }
+
+    private func spotMetric(_ label: String, _ value: Int) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("\(value)")
+                .font(.title3.monospacedDigit().bold())
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func spotPriorityBinding(_ category: DXSpotCategory) -> Binding<Int> {
+        Binding(
+            get: { model.configuration.spotBridge.style(for: category).priority },
+            set: { value in
+                var style = model.configuration.spotBridge.style(for: category)
+                style.priority = value
+                model.configuration.spotBridge.setStyle(style, for: category)
+            }
+        )
+    }
+
+    private func spotLifetimeBinding(_ category: DXSpotCategory) -> Binding<Int> {
+        Binding(
+            get: { model.configuration.spotBridge.style(for: category).lifetimeSeconds },
+            set: { value in
+                var style = model.configuration.spotBridge.style(for: category)
+                style.lifetimeSeconds = value
+                model.configuration.spotBridge.setStyle(style, for: category)
+            }
+        )
+    }
+
+    private func spotColorBinding(_ category: DXSpotCategory) -> Binding<Color> {
+        Binding(
+            get: { color(hex: model.configuration.spotBridge.style(for: category).colorHex) },
+            set: { value in
+                var style = model.configuration.spotBridge.style(for: category)
+                style.colorHex = hex(color: value)
+                model.configuration.spotBridge.setStyle(style, for: category)
+            }
+        )
+    }
+
+    private func lifetimeLabel(_ seconds: Int) -> String {
+        seconds < 3_600 ? "\(seconds / 60) min" : "1 hour"
+    }
+
+    private func color(hex: String) -> Color {
+        let raw = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        guard raw.count == 6, let value = Int(raw, radix: 16) else { return .blue }
+        return Color(
+            red: Double((value >> 16) & 0xFF) / 255,
+            green: Double((value >> 8) & 0xFF) / 255,
+            blue: Double(value & 0xFF) / 255
+        )
+    }
+
+    private func hex(color: Color) -> String {
+        guard let rgb = NSColor(color).usingColorSpace(.sRGB) else { return "#0A84FF" }
+        return String(
+            format: "#%02X%02X%02X",
+            Int((rgb.redComponent * 255).rounded()),
+            Int((rgb.greenComponent * 255).rounded()),
+            Int((rgb.blueComponent * 255).rounded())
+        )
+    }
+
+    @ViewBuilder
+    private var stationTab: some View {
+        if model.configuration.connectionKind != .remoteAgent {
+            ContentUnavailableView(
+                "Remote station settings unavailable",
+                systemImage: "desktopcomputer.trianglebadge.exclamationmark",
+                description: Text("Select Remote Station Agent in Configuration to edit Windows station policy.")
+            )
+        } else {
+            VStack(alignment: .leading, spacing: Layout.compact) {
+                HStack(alignment: .top, spacing: Layout.standard) {
+                    GroupBox("Hardware") {
+                        Grid(alignment: .leading, horizontalSpacing: Layout.compact, verticalSpacing: 6) {
+                            GridRow {
+                                Toggle("KPA500", isOn: $model.remoteConfiguration.kpa500.enabled)
+                                TextField("COM port", text: $model.remoteConfiguration.kpa500.port).frame(width: 84)
+                                TextField("Baud", value: $model.remoteConfiguration.kpa500.baudrate, format: .number).frame(width: 78)
+                            }
+                            GridRow {
+                                Toggle("KAT500", isOn: $model.remoteConfiguration.kat500.enabled)
+                                TextField("COM port", text: $model.remoteConfiguration.kat500.port).frame(width: 84)
+                                TextField("Baud", value: $model.remoteConfiguration.kat500.baudrate, format: .number).frame(width: 78)
+                            }
+                            GridRow {
+                                Toggle("Follow FLEX", isOn: $model.remoteConfiguration.policy.followRadio)
+                                Toggle("Commissioned", isOn: $model.remoteConfiguration.commissioned)
+                                    .gridCellColumns(2)
+                            }
+                        }
+                        .padding(Layout.tight)
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    GroupBox("Tune and digital") {
+                        Grid(alignment: .leading, horizontalSpacing: Layout.compact, verticalSpacing: 6) {
+                            GridRow {
+                                Text("Tune W").foregroundStyle(.secondary)
+                                TextField("W", value: $model.remoteConfiguration.policy.tunePowerW, format: .number).frame(width: 58)
+                                Text("Target SWR").foregroundStyle(.secondary)
+                                TextField("SWR", value: $model.remoteConfiguration.policy.tuneTargetSWR, format: .number).frame(width: 58)
+                            }
+                            GridRow {
+                                Text("Abort SWR").foregroundStyle(.secondary)
+                                TextField("SWR", value: $model.remoteConfiguration.policy.tuneAbortSWR, format: .number).frame(width: 58)
+                                Text("Timeout s").foregroundStyle(.secondary)
+                                TextField("Seconds", value: $model.remoteConfiguration.policy.tuneTimeoutSeconds, format: .number).frame(width: 58)
+                            }
+                            GridRow {
+                                Text("Digital PA").foregroundStyle(.secondary)
+                                Picker("Digital PA policy", selection: $model.remoteConfiguration.policy.digitalKPAPolicy) {
+                                    Text("Operate").tag("operate")
+                                    Text("Standby").tag("standby")
+                                }
+                                .labelsHidden()
+                                .gridCellColumns(3)
+                            }
+                        }
+                        .padding(Layout.tight)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .disabled(!model.remoteConfigurationLoaded || model.remoteConfigurationBusy)
+
+                HStack {
+                    Text("Band routing and drive")
+                        .font(.headline)
+                    Spacer()
+                    ForEach(1...3, id: \.self) { antenna in
+                        TextField(
+                            "ANT\(antenna) name",
+                            text: remoteAntennaNameBinding(antenna)
+                        )
+                        .frame(width: 108)
+                    }
+                }
+                .disabled(!model.remoteConfigurationLoaded || model.remoteConfigurationBusy)
+
+                GroupBox {
+                    Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
+                        GridRow {
+                            Text("Band")
+                            Text("FLEX TX")
+                            Text("KAT out")
+                            Text("PA")
+                            Text("PA W")
+                            Text("Bare W")
+                            Text("Digital PA")
+                            Text("Digital W")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        Divider().gridCellColumns(8)
+                        ForEach(RemoteStationConfiguration.bands, id: \.self) { band in
+                            GridRow {
+                                Text(band).font(.body.monospacedDigit())
+                                Picker("\(band) FLEX TX antenna", selection: remoteFlexAntennaBinding(band)) {
+                                    ForEach(["ANT1", "ANT2", "XVTR"], id: \.self) { Text($0).tag($0) }
+                                }
+                                .labelsHidden().frame(width: 82)
+                                Picker("\(band) KAT output", selection: remoteKATAntennaBinding(band)) {
+                                    ForEach(1...3, id: \.self) { Text("ANT\($0)").tag($0) }
+                                }
+                                .labelsHidden().frame(width: 76)
+                                Toggle("\(band) amplifier allowed", isOn: remoteBandMembershipBinding(band, digital: false))
+                                    .labelsHidden()
+                                TextField("PA W", value: remotePowerBinding(band, kind: .amplifier), format: .number).frame(width: 58)
+                                TextField("Barefoot W", value: remotePowerBinding(band, kind: .barefoot), format: .number).frame(width: 58)
+                                Toggle("\(band) digital amplifier allowed", isOn: remoteBandMembershipBinding(band, digital: true))
+                                    .labelsHidden()
+                                TextField("Digital W", value: remotePowerBinding(band, kind: .digital), format: .number).frame(width: 64)
+                            }
+                        }
+                    }
+                    .padding(Layout.tight)
+                }
+                .disabled(!model.remoteConfigurationLoaded || model.remoteConfigurationBusy)
+
+                HStack {
+                    Text(model.remoteConfigurationStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                    Spacer()
+                    Button("Reload from Windows") { model.reloadRemoteConfiguration() }
+                        .disabled(model.remoteConfigurationBusy || !model.isRunning)
+                    Button("Save to Windows") { model.saveRemoteConfiguration() }
+                        .disabled(model.remoteConfigurationBusy || !model.remoteConfigurationLoaded)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.top, Layout.compact)
+        }
+    }
+
+    private enum RemotePowerKind {
+        case amplifier
+        case barefoot
+        case digital
+    }
+
+    private func remoteFlexAntennaBinding(_ band: String) -> Binding<String> {
+        Binding(
+            get: { model.remoteConfiguration.policy.flexAntenna.bands[band] ?? "ANT1" },
+            set: { model.remoteConfiguration.policy.flexAntenna.bands[band] = $0 }
+        )
+    }
+
+    private func remoteKATAntennaBinding(_ band: String) -> Binding<Int> {
+        Binding(
+            get: { model.remoteConfiguration.policy.katAntenna[band] ?? 1 },
+            set: { model.remoteConfiguration.policy.katAntenna[band] = $0 }
+        )
+    }
+
+    private func remoteAntennaNameBinding(_ antenna: Int) -> Binding<String> {
+        let key = String(antenna)
+        return Binding(
+            get: { model.remoteConfiguration.policy.katAntennaNames[key] ?? "KAT ANT\(antenna)" },
+            set: { model.remoteConfiguration.policy.katAntennaNames[key] = $0 }
+        )
+    }
+
+    private func remoteBandMembershipBinding(_ band: String, digital: Bool) -> Binding<Bool> {
+        Binding(
+            get: {
+                let bands = digital
+                    ? model.remoteConfiguration.policy.digitalAmplifierAllowedBands
+                    : model.remoteConfiguration.policy.amplifierAllowedBands
+                return bands.contains(band)
+            },
+            set: { enabled in
+                var bands = digital
+                    ? model.remoteConfiguration.policy.digitalAmplifierAllowedBands
+                    : model.remoteConfiguration.policy.amplifierAllowedBands
+                bands.removeAll { $0 == band }
+                if enabled { bands.append(band) }
+                bands.sort { lhs, rhs in
+                    (RemoteStationConfiguration.bands.firstIndex(of: lhs) ?? .max)
+                        < (RemoteStationConfiguration.bands.firstIndex(of: rhs) ?? .max)
+                }
+                if digital {
+                    model.remoteConfiguration.policy.digitalAmplifierAllowedBands = bands
+                } else {
+                    model.remoteConfiguration.policy.amplifierAllowedBands = bands
+                }
+            }
+        )
+    }
+
+    private func remotePowerBinding(_ band: String, kind: RemotePowerKind) -> Binding<Int> {
+        Binding(
+            get: {
+                switch kind {
+                case .amplifier: model.remoteConfiguration.policy.amplifierDriveW[band] ?? 25
+                case .barefoot: model.remoteConfiguration.policy.barefootDriveW[band] ?? 25
+                case .digital: model.remoteConfiguration.policy.digitalAmplifierDriveW[band] ?? 25
+                }
+            },
+            set: { value in
+                switch kind {
+                case .amplifier: model.remoteConfiguration.policy.amplifierDriveW[band] = value
+                case .barefoot: model.remoteConfiguration.policy.barefootDriveW[band] = value
+                case .digital: model.remoteConfiguration.policy.digitalAmplifierDriveW[band] = value
+                }
+            }
+        )
     }
 
     @ViewBuilder

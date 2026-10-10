@@ -18,9 +18,20 @@ final class AppModel: ObservableObject {
     @Published var remoteXITEnabled = false
     @Published var remoteXITOffsetHz = 0
     @Published var remoteRFPowerWatts = 0
+    @Published private(set) var spotBridgeStatus = "Stopped"
+    @Published private(set) var spotsReceived = 0
+    @Published private(set) var spotsForwarded = 0
+    @Published private(set) var spotsRejected = 0
+    @Published private(set) var lastSpotSummary = "No spots received"
+    @Published var remoteConfiguration = RemoteStationConfiguration.placeholder
+    @Published private(set) var remoteConfigurationLoaded = false
+    @Published private(set) var remoteConfigurationStatus = "Connect to load station settings"
+    @Published private(set) var remoteConfigurationBusy = false
 
     private var catServer: TCPCommandServer?
     private var rigCtlServer: TCPCommandServer?
+    private var logbookSpotReceiver: UDPSpotReceiver?
+    private var contestSpotReceiver: UDPSpotReceiver?
     private var radio: (any RadioControlling)?
     private var flexRadio: FlexRadioClient?
     private var smartLinkRadio: SmartLinkRadioClient?
@@ -28,6 +39,8 @@ final class AppModel: ObservableObject {
     private var legacyXCAT: LegacyXCATClient?
     private var lastLegacyXCATLaunch = Date.distantPast
     private var stopTask: Task<Void, Never>?
+    private var spotCapabilityWarningShown = false
+    private var lastSpotError = ""
 
     var isStationReady: Bool {
         isRadioConnected
@@ -117,6 +130,7 @@ final class AppModel: ObservableObject {
                             self?.isRadioConnected = snapshot.isConnected
                             self?.remoteStationStatus = snapshot.remoteStationStatus
                             self?.status = Self.radioStatus(snapshot)
+                            self?.refreshSpotBridgeStatus()
                         }
                     }
                 )
@@ -289,7 +303,13 @@ final class AppModel: ObservableObject {
                 Task { await smartLinkRadio.start() }
             }
             if let remoteAgent {
-                Task { await remoteAgent.start() }
+                Task { [weak self] in
+                    await remoteAgent.start()
+                    await self?.loadRemoteConfiguration(using: remoteAgent)
+                }
+            }
+            if configuration.spotBridge.enabled {
+                try startSpotBridge(radio: selectedRadio)
             }
         } catch {
             let message = error.localizedDescription
@@ -303,8 +323,12 @@ final class AppModel: ObservableObject {
         guard stopTask == nil else { return }
         catServer?.stop()
         rigCtlServer?.stop()
+        logbookSpotReceiver?.stop()
+        contestSpotReceiver?.stop()
         catServer = nil
         rigCtlServer = nil
+        logbookSpotReceiver = nil
+        contestSpotReceiver = nil
         let radioToStop = radio
         let flexToStop = flexRadio
         let legacyToStop = legacyXCAT
@@ -318,6 +342,12 @@ final class AppModel: ObservableObject {
         isRunning = false
         isRadioConnected = false
         remoteStationStatus = nil
+        remoteConfigurationLoaded = false
+        remoteConfigurationStatus = "Connect to load station settings"
+        remoteConfigurationBusy = false
+        spotBridgeStatus = "Stopped"
+        spotCapabilityWarningShown = false
+        lastSpotError = ""
         status = "Stopped"
         record("OM0RX-xCat stopped")
         stopTask = Task { [weak self] in
@@ -351,6 +381,65 @@ final class AppModel: ObservableObject {
         status = "Reconnecting to Remote Station Agent"
         record("Agent: Manual reconnect requested")
         Task { await remoteAgent.reconnectNow() }
+    }
+
+    func restartSpotBridge() {
+        save()
+        logbookSpotReceiver?.stop()
+        contestSpotReceiver?.stop()
+        logbookSpotReceiver = nil
+        contestSpotReceiver = nil
+        guard configuration.spotBridge.enabled else {
+            spotBridgeStatus = "Disabled"
+            record("Spots: bridge disabled")
+            return
+        }
+        guard isRunning, let radio else {
+            spotBridgeStatus = "Starts with OM0RX-xCat"
+            return
+        }
+        do {
+            try startSpotBridge(radio: radio)
+        } catch {
+            spotBridgeStatus = "Listener error"
+            record("Spots: \(error.localizedDescription)")
+        }
+    }
+
+    func reloadRemoteConfiguration() {
+        guard let remoteAgent else {
+            remoteConfigurationStatus = "Remote Station Agent is not running"
+            return
+        }
+        Task { [weak self] in await self?.loadRemoteConfiguration(using: remoteAgent) }
+    }
+
+    func saveRemoteConfiguration() {
+        guard let remoteAgent else {
+            remoteConfigurationStatus = "Remote Station Agent is not running"
+            return
+        }
+        remoteConfigurationBusy = true
+        remoteConfigurationStatus = "Saving on Windows"
+        let candidate = remoteConfiguration
+        Task { [weak self] in
+            do {
+                let saved = try await remoteAgent.saveConfiguration(candidate)
+                await MainActor.run {
+                    self?.remoteConfiguration = saved
+                    self?.remoteConfigurationLoaded = true
+                    self?.remoteConfigurationBusy = false
+                    self?.remoteConfigurationStatus = "Saved — restart the Windows agent to apply"
+                    self?.record("Station configuration saved on Windows; agent restart required")
+                }
+            } catch {
+                await MainActor.run {
+                    self?.remoteConfigurationBusy = false
+                    self?.remoteConfigurationStatus = "Save failed: \(error.localizedDescription)"
+                    self?.record("Station configuration rejected: \(error.localizedDescription)")
+                }
+            }
+        }
     }
 
     func applyRemoteRIT() {
@@ -392,6 +481,122 @@ final class AppModel: ObservableObject {
         events.append("\(formatter.string(from: Date()))  \(message)")
         if events.count > 200 {
             events.removeFirst(events.count - 200)
+        }
+    }
+
+    private func startSpotBridge(radio: any RadioControlling) throws {
+        let settings = configuration.spotBridge
+        guard settings.logbookPort != settings.contestPort else {
+            throw XCatError.server("Logbook and contest spot ports must be different.")
+        }
+        let logbook = makeSpotReceiver(feed: .logbook, radio: radio)
+        let contest = makeSpotReceiver(feed: .contest, radio: radio)
+        do {
+            try logbook.start(port: settings.logbookPort)
+            try contest.start(port: settings.contestPort)
+        } catch {
+            logbook.stop()
+            contest.stop()
+            throw error
+        }
+        logbookSpotReceiver = logbook
+        contestSpotReceiver = contest
+        refreshSpotBridgeStatus()
+        record("Spots: listening on UDP \(settings.logbookPort) / \(settings.contestPort)")
+    }
+
+    private func makeSpotReceiver(feed: SpotFeed, radio: any RadioControlling) -> UDPSpotReceiver {
+        UDPSpotReceiver(
+            label: "com.oliverbross.OM0RXXCat.spots.\(feed.rawValue.lowercased())",
+            onDatagram: { [weak self] data in
+                Task { @MainActor in self?.handleSpotDatagram(data, feed: feed, radio: radio) }
+            },
+            onEvent: { [weak self] event in
+                Task { @MainActor in
+                    self?.record("Spots \(feed.rawValue): \(event)")
+                    if event.contains("failed") { self?.spotBridgeStatus = "Listener error" }
+                }
+            }
+        )
+    }
+
+    private func handleSpotDatagram(_ data: Data, feed: SpotFeed, radio: any RadioControlling) {
+        spotsReceived += 1
+        do {
+            let parsed = try RUMlogSpotParser.parse(data, feed: feed)
+            let style = configuration.spotBridge.style(for: parsed.category)
+            let spot = try parsed.flexSpot(feed: feed, style: style)
+            lastSpotSummary = "\(spot.callsign) · \(String(format: "%.3f", Double(spot.frequencyHz) / 1_000_000)) MHz · \(parsed.category.title)"
+            if configuration.connectionKind == .remoteAgent,
+               remoteStationStatus?.supportedCommands.contains("add_spot") != true {
+                spotBridgeStatus = "Listening — Windows agent update required"
+                if !spotCapabilityWarningShown {
+                    spotCapabilityWarningShown = true
+                    record("Spots: Windows agent does not yet advertise add_spot; incoming spots remain local")
+                }
+                return
+            }
+            Task { [weak self] in
+                do {
+                    try await radio.addSpot(spot)
+                    await MainActor.run {
+                        self?.spotsForwarded += 1
+                        self?.spotBridgeStatus = "Listening — forwarding to FLEX"
+                        self?.lastSpotError = ""
+                        self?.record("Spots: sent \(spot.callsign) to FLEX")
+                    }
+                } catch {
+                    await MainActor.run {
+                        self?.spotsRejected += 1
+                        let detail = error.localizedDescription
+                        if self?.isRadioConnected == false {
+                            self?.spotBridgeStatus = "Listening — radio disconnected"
+                        } else if detail.localizedCaseInsensitiveContains("authenticate") {
+                            self?.spotBridgeStatus = "Listening — agent authentication failed"
+                        } else {
+                            self?.spotBridgeStatus = "Listening — FLEX rejected last spot"
+                        }
+                        if self?.lastSpotError != detail {
+                            self?.lastSpotError = detail
+                            self?.record("Spots: \(spot.callsign) rejected: \(detail)")
+                        }
+                    }
+                }
+            }
+        } catch {
+            spotsRejected += 1
+            lastSpotSummary = "Rejected RUMlog datagram"
+            record("Spots: rejected UDP datagram: \(error.localizedDescription)")
+        }
+    }
+
+    private func refreshSpotBridgeStatus() {
+        guard configuration.spotBridge.enabled, logbookSpotReceiver != nil, contestSpotReceiver != nil else { return }
+        if !isRadioConnected {
+            spotBridgeStatus = "Listening — waiting for radio"
+        } else if configuration.connectionKind == .remoteAgent,
+                  remoteStationStatus?.supportedCommands.contains("add_spot") != true {
+            spotBridgeStatus = "Listening — Windows agent update required"
+        } else {
+            spotCapabilityWarningShown = false
+            spotBridgeStatus = "Listening — ready"
+        }
+    }
+
+    private func loadRemoteConfiguration(using client: RemoteAgentClient) async {
+        remoteConfigurationBusy = true
+        remoteConfigurationStatus = "Loading from Windows"
+        do {
+            let loaded = try await client.fetchConfiguration()
+            remoteConfiguration = loaded
+            remoteConfigurationLoaded = true
+            remoteConfigurationBusy = false
+            remoteConfigurationStatus = "Loaded from Windows"
+        } catch {
+            remoteConfigurationLoaded = false
+            remoteConfigurationBusy = false
+            remoteConfigurationStatus = "Load failed: \(error.localizedDescription)"
+            record("Station configuration unavailable: \(error.localizedDescription)")
         }
     }
 

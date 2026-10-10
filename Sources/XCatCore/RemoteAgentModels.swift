@@ -115,6 +115,21 @@ struct RemoteAgentCommand: Equatable, Sendable {
         Self(name: "send_cw", arguments: ["text": .string(text)], requiresSafeStation: true)
     }
 
+    static func addSpot(_ spot: FlexSpot) -> Self {
+        Self(name: "add_spot", arguments: [
+            "frequency_hz": .integer(spot.frequencyHz),
+            "callsign": .string(spot.callsign),
+            "mode": .string(spot.mode),
+            "source": .string(spot.source),
+            "spotter": .string(spot.spotter),
+            "comment": .string(spot.comment),
+            "timestamp": .integer(spot.timestamp),
+            "lifetime_seconds": .integer(Int64(spot.lifetimeSeconds)),
+            "priority": .integer(Int64(spot.priority)),
+            "color": .string(spot.colorHex),
+        ], requiresSafeStation: false)
+    }
+
     static let clearCW = Self(name: "clear_cw", arguments: [:], requiresSafeStation: false)
 
     static func station(_ action: RemoteStationAction) -> Self {

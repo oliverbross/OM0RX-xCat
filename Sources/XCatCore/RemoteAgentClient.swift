@@ -189,6 +189,30 @@ public actor RemoteAgentClient: RadioControlling {
         try await execute(.station(action))
     }
 
+    public func addSpot(_ spot: FlexSpot) async throws {
+        try await execute(.addSpot(spot))
+    }
+
+    public func fetchConfiguration() async throws -> RemoteStationConfiguration {
+        let request = endpoint.httpRequest(path: "/api/v1/config", token: token)
+        let (data, response) = try await session.data(for: request)
+        try Self.validate(response: response, data: data)
+        let decoded = try JSONDecoder().decode(RemoteConfigResponse.self, from: data)
+        guard decoded.success else { throw XCatError.server("Remote Agent rejected the configuration request.") }
+        return decoded.config
+    }
+
+    public func saveConfiguration(_ configuration: RemoteStationConfiguration) async throws -> RemoteStationConfiguration {
+        var request = endpoint.httpRequest(path: "/api/v1/config", token: token, method: "PUT")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(RemoteConfigUpdateRequest(config: configuration))
+        let (data, response) = try await session.data(for: request)
+        try Self.validate(response: response, data: data)
+        let decoded = try JSONDecoder().decode(RemoteConfigResponse.self, from: data)
+        guard decoded.success else { throw XCatError.server("Remote Agent rejected the configuration update.") }
+        return decoded.config
+    }
+
     private func connect() async {
         guard shouldRun else { return }
         generation += 1

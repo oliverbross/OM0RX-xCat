@@ -25,5 +25,8 @@ struct SmartLinkAuthTests {
         #expect(configuration.smartLinkRadioSerial.isEmpty)
         #expect(configuration.remoteAgentBaseURL.isEmpty)
         #expect(configuration.allowCATTransmit == false)
+        #expect(configuration.spotBridge.enabled)
+        #expect(configuration.spotBridge.logbookPort == 12_062)
+        #expect(configuration.spotBridge.contestPort == 12_063)
     }
 }

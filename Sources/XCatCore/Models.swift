@@ -175,6 +175,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     public var superviseLegacyXCAT: Bool
     public var allowCATTransmit: Bool
     public var launchServersAutomatically: Bool
+    public var spotBridge: SpotBridgeConfiguration
 
     public init(
         connectionKind: ConnectionKind = .smartLink,
@@ -191,7 +192,8 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         legacyXCATPort: UInt16 = 5002,
         superviseLegacyXCAT: Bool = true,
         allowCATTransmit: Bool = false,
-        launchServersAutomatically: Bool = true
+        launchServersAutomatically: Bool = true,
+        spotBridge: SpotBridgeConfiguration = SpotBridgeConfiguration()
     ) {
         self.connectionKind = connectionKind
         self.radioHost = radioHost
@@ -208,13 +210,14 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         self.superviseLegacyXCAT = superviseLegacyXCAT
         self.allowCATTransmit = allowCATTransmit
         self.launchServersAutomatically = launchServersAutomatically
+        self.spotBridge = spotBridge
     }
 
     private enum CodingKeys: String, CodingKey {
         case connectionKind, radioHost, radioPort, stationName, sliceLetter
         case smartLinkEmail, smartLinkRadioSerial, remoteAgentBaseURL
         case catPort, rigCtlPort, legacyXCATHost, legacyXCATPort
-        case superviseLegacyXCAT, allowCATTransmit, launchServersAutomatically
+        case superviseLegacyXCAT, allowCATTransmit, launchServersAutomatically, spotBridge
     }
 
     public init(from decoder: any Decoder) throws {
@@ -234,6 +237,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         superviseLegacyXCAT = try values.decodeIfPresent(Bool.self, forKey: .superviseLegacyXCAT) ?? true
         allowCATTransmit = try values.decodeIfPresent(Bool.self, forKey: .allowCATTransmit) ?? false
         launchServersAutomatically = try values.decodeIfPresent(Bool.self, forKey: .launchServersAutomatically) ?? true
+        spotBridge = try values.decodeIfPresent(SpotBridgeConfiguration.self, forKey: .spotBridge) ?? SpotBridgeConfiguration()
     }
 }
 
@@ -263,6 +267,7 @@ public protocol RadioControlling: Actor {
     func setXIT(enabled: Bool, offsetHz: Int, vfo: String?) async throws
     func setRFPower(_ watts: Int) async throws
     func performStationAction(_ action: RemoteStationAction) async throws
+    func addSpot(_ spot: FlexSpot) async throws
 }
 
 public extension RadioControlling {
@@ -285,6 +290,7 @@ public extension RadioControlling {
     func setXIT(enabled: Bool, offsetHz: Int, vfo: String? = nil) async throws { throw XCatError.unsupported }
     func setRFPower(_ watts: Int) async throws { throw XCatError.unsupported }
     func performStationAction(_ action: RemoteStationAction) async throws { throw XCatError.unsupported }
+    func addSpot(_ spot: FlexSpot) async throws { throw XCatError.unsupported }
 }
 
 public enum XCatError: LocalizedError, Sendable {

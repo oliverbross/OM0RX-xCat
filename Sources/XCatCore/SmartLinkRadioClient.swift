@@ -142,6 +142,10 @@ public actor SmartLinkRadioClient: RadioControlling {
         try await radio.clearCW()
     }
 
+    public func addSpot(_ spot: FlexSpot) async throws {
+        try await connectedRadio().addSpot(spot)
+    }
+
     public func setTransmit(_ mode: CATTransmitMode) async throws {
         try await connectedRadio().setTransmit(mode)
     }

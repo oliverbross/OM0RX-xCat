@@ -217,6 +217,27 @@ public actor FlexRadioClient: RadioControlling {
         try? await setTransmit(false)
     }
 
+    public func addSpot(_ spot: FlexSpot) async throws {
+        func encoded(_ value: String) -> String {
+            value.replacingOccurrences(of: " ", with: "\u{7F}")
+        }
+        let frequency = String(format: "%.6f", Double(spot.frequencyHz) / 1_000_000)
+        let command = [
+            "spot add",
+            "rx_freq=\(frequency)",
+            "callsign=\(encoded(spot.callsign))",
+            "mode=\(encoded(spot.mode))",
+            "source=\(encoded(spot.source))",
+            "spotter_callsign=\(encoded(spot.spotter))",
+            "timestamp=\(spot.timestamp)",
+            "lifetime_seconds=\(spot.lifetimeSeconds)",
+            "priority=\(spot.priority)",
+            "comment=\(encoded(spot.comment))",
+            "color=\(spot.colorHex)",
+        ].joined(separator: " ")
+        try await sendCommand(command)
+    }
+
     public func setTransmit(_ mode: CATTransmitMode) async throws {
         guard state == .ready, value.isConnected, selectedSliceID != nil else { throw XCatError.notConnected }
         switch mode {

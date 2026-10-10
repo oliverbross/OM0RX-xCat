@@ -18,6 +18,9 @@ Copyright © 2026 Oliver Bross OM0RX. Licensed under GPL-3.0-only.
   HTTPS and WebSocket, with the bearer token stored in macOS Keychain.
 - Menu-bar station widget with live VFO, KPA500, KAT500, route, commissioning,
   blocker, and alarm state.
+- Built-in RUMlogNG UDP spot bridge with independent Logbook and Contest rule
+  sets, priorities, colours, and marker lifetimes. Spots are sent through the
+  authenticated Remote Station Agent and never key PTT or transmit RF.
 - Strict radio-serial and SmartSDR station selection.
 - Live two-line VFO display. A and B each show their frequency, mode, and
   independent `RX` and `TX` roles from the radio's slice flags.
@@ -37,7 +40,8 @@ Download `OM0RX-xCat-v0.2.0.zip` from GitHub Releases, expand it, and move
 `OM0RX-xCat.app` to `/Applications`. The release is signed with the Developer
 ID certificate for Oliver Bross. See the release notes for notarization status.
 
-The current source tree builds version 0.3.0 with Remote Station Agent support.
+The current source tree builds version 0.4.0 with Remote Station Agent support
+and the native RUMlogNG-to-FLEX panadapter spot bridge.
 Build 4 adds an explicit **Reconnect Agent** action in both the main window and
 menu-bar panel. Reconnect refreshes the authenticated HTTPS/WebSocket session
 without using the application Stop path or sending station-control commands.
@@ -46,9 +50,10 @@ full CAT and station control** is selected, xCat forwards every command that the
 agent advertises and presents commissioning, route, and alarm information as
 operator advisories. The Windows agent remains the authoritative hardware and
 station-policy endpoint.
-The main window is organized into compact **Status**, **Activity**, and
-**Configuration** tabs. Each tab fits within the window without a page-level
-scrollbar, and connection health is always shown with both color and text.
+The main window is organized into compact **Status**, **Activity**, **Spots**,
+**Station**, and **Configuration** tabs. Each tab fits within the window without a
+page-level scrollbar, and connection health is always shown with both color
+and text.
 The published v0.2.0 release predates that transport.
 
 On first use:
@@ -91,6 +96,19 @@ live immediately even when SmartSDR's incremental event omits `in_use=1`.
 The RigCtlD endpoint defaults to `127.0.0.1:14532`. The historical 5002/4532
 ports may be used only after stopping any service that already owns them. The
 app verifies listener readiness and reports a port collision as startup failure.
+
+For panadapter spots, enable RUMlogNG **Settings → UDP → DX spot (N1MM)** with
+host `127.0.0.1` and port `12062`. OM0RX-xCat listens only on loopback. The
+Spots tab also reserves `12063` for the independent contest rule set. Priorities,
+colours, and lifetimes are editable without installing SpotToSunFlex.
+
+In Remote Station Agent mode, the **Station** tab loads and edits the Windows
+agent's non-secret hardware and policy configuration: KPA/KAT ports, FLEX
+station and antenna rules, tune limits, antenna names, commissioning, and the
+full per-band PA/barefoot/digital drive and routing matrix. **Save to Windows**
+validates and atomically stores the settings while preserving the bearer token
+and server bind configuration. Restart the Windows agent to activate a saved
+configuration.
 
 ## Other connection modes
 
