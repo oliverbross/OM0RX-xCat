@@ -3,8 +3,10 @@
 ## Scope
 
 OM0RX-xCat is a macOS-only Swift package. Keep the CAT and RigCtlD servers
-loopback-only and keep CAT transmit opt-in. Never borrow credentials or tokens
-from another SmartLink application.
+loopback-only and keep CAT transmit opt-in. The owner has explicitly authorized
+the established FlexRadio public-client password-realm flow used here. Never
+persist or log the user's password, and keep refresh tokens account-scoped in
+macOS Keychain.
 
 ## Layout
 
@@ -27,6 +29,10 @@ Handle fragmented and coalesced TCP input, bound all buffers, and keep protocol
 responses deterministic. Preserve the observed RUMlogNG TS-480 poll contract
 and Flex-WavelogGate RigCtlD contract with tests. A connection loss must attempt
 to unkey and clear CW state.
+
+The legacy xCAT relay is a fallback transport. Keep its upstream socket
+independent from the downstream listeners and preserve automatic reconnect plus
+process supervision.
 
 ## Validation
 

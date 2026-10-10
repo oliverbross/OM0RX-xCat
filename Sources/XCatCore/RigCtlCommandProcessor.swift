@@ -2,9 +2,11 @@ import Foundation
 
 public actor RigCtlCommandProcessor {
     private let radio: any RadioControlling
+    private let allowTransmit: Bool
 
-    public init(radio: any RadioControlling) {
+    public init(radio: any RadioControlling, allowTransmit: Bool = false) {
         self.radio = radio
+        self.allowTransmit = allowTransmit
     }
 
     public func handle(_ rawCommand: String) async -> String {
@@ -12,9 +14,11 @@ public actor RigCtlCommandProcessor {
         let snapshot = await radio.snapshot()
 
         if command == "f" {
+            guard snapshot.isConnected else { return "RPRT -1\n" }
             return "\(snapshot.frequencyHz)\n"
         }
         if command == "m" {
+            guard snapshot.isConnected else { return "RPRT -1\n" }
             return "\(Self.rigCtlMode(snapshot.mode))\n0\n"
         }
         if command == "t" {
@@ -38,7 +42,7 @@ public actor RigCtlCommandProcessor {
             let fields = command.split(separator: " ")
             guard fields.count >= 2 else { return "RPRT -1\n" }
             do {
-                try await radio.setMode(String(fields[1]))
+                try await radio.setMode(Self.flexMode(String(fields[1])))
                 return "RPRT 0\n"
             } catch {
                 return "RPRT -1\n"
@@ -46,6 +50,7 @@ public actor RigCtlCommandProcessor {
         }
         if command.hasPrefix("T ") {
             let enabled = command.dropFirst(2) == "1"
+            if enabled && !allowTransmit { return "RPRT -1\n" }
             do {
                 try await radio.setTransmit(enabled)
                 return "RPRT 0\n"
@@ -61,6 +66,14 @@ public actor RigCtlCommandProcessor {
         case "DIGU": "PKTUSB"
         case "DIGL": "PKTLSB"
         case "NFM", "DFM": "FM"
+        default: mode.uppercased()
+        }
+    }
+
+    private static func flexMode(_ mode: String) -> String {
+        switch mode.uppercased() {
+        case "PKTUSB": "DIGU"
+        case "PKTLSB": "DIGL"
         default: mode.uppercased()
         }
     }

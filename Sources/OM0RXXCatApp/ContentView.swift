@@ -15,10 +15,12 @@ struct ContentView: View {
                 }
                 Spacer()
                 Circle()
-                    .fill(model.isRunning ? Color.green : Color.secondary)
+                    .fill(model.isRadioConnected ? Color.green : (model.isRunning ? Color.orange : Color.secondary))
                     .frame(width: 12, height: 12)
                 Text(model.status)
                     .font(.headline)
+                    .multilineTextAlignment(.trailing)
+                    .monospacedDigit()
             }
 
             Form {
@@ -27,17 +29,40 @@ struct ContentView: View {
                         Text(kind.rawValue).tag(kind)
                     }
                 }
-                TextField("Radio host", text: $model.configuration.radioHost)
-                    .disabled(model.configuration.connectionKind != .local)
-                if model.configuration.connectionKind == .smartLink {
-                    Text("SmartLink requires a FlexRadio-issued OAuth client ID for OM0RX-xCat. LAN and simulator testing are available now.")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
+                if model.configuration.connectionKind == .local {
+                    TextField("Radio host", text: $model.configuration.radioHost)
                 }
-                HStack {
-                    TextField("Station", text: $model.configuration.stationName)
-                    TextField("Slice", text: $model.configuration.sliceLetter)
-                        .frame(width: 80)
+                if model.configuration.connectionKind == .legacyXCAT {
+                    HStack {
+                        TextField("xCAT host", text: $model.configuration.legacyXCATHost)
+                        TextField("xCAT CAT port", value: $model.configuration.legacyXCATPort, format: .number)
+                            .frame(width: 160)
+                    }
+                    Toggle("Restart xCAT automatically if it crashes", isOn: $model.configuration.superviseLegacyXCAT)
+                    Text("RUMlogNG → OM0RX-xCat → xCAT → SmartLink → FlexRadio")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if model.configuration.connectionKind == .smartLink {
+                    TextField("SmartLink email", text: $model.configuration.smartLinkEmail)
+                        .textContentType(.username)
+                    SecureField("SmartLink password (needed once)", text: $model.smartLinkPassword)
+                        .textContentType(.password)
+                    TextField("Preferred radio serial (optional)", text: $model.configuration.smartLinkRadioSerial)
+                    Text("The password stays only in memory. SmartLink's refresh token and the radio certificate pin are protected by macOS Keychain.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    HStack {
+                        Button("Forget Saved Session") { model.forgetSmartLinkSession() }
+                        Button("Reset Radio Certificate Pin") { model.resetSmartLinkCertificatePin() }
+                    }
+                }
+                if model.configuration.connectionKind != .legacyXCAT {
+                    HStack {
+                        TextField("Station", text: $model.configuration.stationName)
+                        TextField("Slice", text: $model.configuration.sliceLetter)
+                            .frame(width: 80)
+                    }
                 }
                 HStack {
                     TextField("CAT port", value: $model.configuration.catPort, format: .number)

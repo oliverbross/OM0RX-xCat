@@ -4,8 +4,6 @@ public actor CATCommandProcessor {
     private let radio: any RadioControlling
     private let allowTransmit: Bool
     private var autoInformation = 0
-    private var receiveVFO = 0
-    private var transmitVFO = 0
 
     public init(radio: any RadioControlling, allowTransmit: Bool = false) {
         self.radio = radio
@@ -24,15 +22,23 @@ public actor CATCommandProcessor {
             return "PS1;"
         case "AI": return "AI\(autoInformation);"
         case "FA":
-            return Self.frequencyResponse(prefix: "FA", hertz: snapshot.frequencyHz)
+            guard snapshot.isConnected, let frequency = await radio.primaryFrequency() else { return "?;" }
+            return Self.frequencyResponse(prefix: "FA", hertz: frequency)
         case "FB":
-            guard let frequency = await radio.secondaryFrequency() else { return "?;" }
+            guard snapshot.isConnected, let frequency = await radio.secondaryFrequency() else { return "?;" }
             return Self.frequencyResponse(prefix: "FB", hertz: frequency)
-        case "FR": return "FR\(receiveVFO);"
-        case "FT": return "FT\(transmitVFO);"
+        case "FR":
+            guard snapshot.isConnected else { return "?;" }
+            return "FR\(Self.receiveVFO(for: snapshot));"
+        case "FT":
+            guard snapshot.isConnected else { return "?;" }
+            return "FT\(Self.transmitVFO(for: snapshot));"
         case "KS": return String(format: "KS%03d;", await radio.cwSpeed())
-        case "IF": return Self.informationResponse(snapshot: snapshot, transmitVFO: transmitVFO)
+        case "IF":
+            guard snapshot.isConnected else { return "?;" }
+            return Self.informationResponse(snapshot: snapshot, transmitVFO: Self.transmitVFO(for: snapshot))
         case "MD":
+            guard snapshot.isConnected else { return "?;" }
             return "MD\(Self.kenwoodMode(for: snapshot.mode));"
         case "TX", "TX0", "TX1", "TX2":
             guard allowTransmit else { return "?;" }
@@ -93,12 +99,12 @@ public actor CATCommandProcessor {
 
     private func setReceiveVFO(_ value: String) async -> String? {
         guard let vfo = Int(value), vfo == 0 || vfo == 1 else { return "?;" }
-        do { try await radio.setReceiveVFO(vfo); receiveVFO = vfo; return nil } catch { return "?;" }
+        do { try await radio.setReceiveVFO(vfo); return nil } catch { return "?;" }
     }
 
     private func setTransmitVFO(_ value: String) async -> String? {
         guard let vfo = Int(value), vfo == 0 || vfo == 1 else { return "?;" }
-        do { try await radio.setSplitTransmit(vfo == 1); transmitVFO = vfo; return nil } catch { return "?;" }
+        do { try await radio.setSplitTransmit(vfo == 1); return nil } catch { return "?;" }
     }
 
     private func handleCW(_ value: String) async -> String? {
@@ -114,7 +120,7 @@ public actor CATCommandProcessor {
     private func setFrequency(_ value: String) async -> String? {
         guard let frequency = Int64(value), frequency > 0 else { return "?;" }
         do {
-            try await radio.setFrequency(frequency)
+            try await radio.setPrimaryFrequency(frequency)
             return nil
         } catch {
             return "?;"
@@ -168,5 +174,13 @@ public actor CATCommandProcessor {
         let mode = kenwoodMode(for: snapshot.mode)
         let tx = snapshot.isTransmitting ? 1 : 0
         return "IF\(frequency)     +000000000\(tx)\(mode)000000\(transmitVFO)0;"
+    }
+
+    private static func receiveVFO(for snapshot: RadioSnapshot) -> Int {
+        snapshot.vfo("B")?.isReceive == true ? 1 : 0
+    }
+
+    private static func transmitVFO(for snapshot: RadioSnapshot) -> Int {
+        snapshot.vfo("B")?.isTransmit == true ? 1 : 0
     }
 }

@@ -2,6 +2,30 @@
 import Foundation
 
 public final class TCPCommandServer: @unchecked Sendable {
+    private final class StartupGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private let semaphore = DispatchSemaphore(value: 0)
+        private var resolved = false
+        private var failure: String?
+
+        func resolve(failure: String? = nil) {
+            let shouldSignal = lock.withLock {
+                guard !resolved else { return false }
+                resolved = true
+                self.failure = failure
+                return true
+            }
+            if shouldSignal { semaphore.signal() }
+        }
+
+        func wait(timeout: DispatchTime) -> String? {
+            guard semaphore.wait(timeout: timeout) == .success else {
+                return "Timed out waiting for the listener to become ready."
+            }
+            return lock.withLock { failure }
+        }
+    }
+
     public enum Framing: Sendable {
         case semicolon
         case newline
@@ -50,11 +74,14 @@ public final class TCPCommandServer: @unchecked Sendable {
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: endpointPort)
 
         let newListener = try NWListener(using: parameters)
+        let startup = StartupGate()
         newListener.stateUpdateHandler = { [onEvent] state in
             switch state {
             case .ready:
+                startup.resolve()
                 onEvent("Listening on 127.0.0.1:\(port)")
             case let .failed(error):
+                startup.resolve(failure: error.localizedDescription)
                 onEvent("Listener failed on port \(port): \(error)")
             case .cancelled:
                 onEvent("Listener stopped on port \(port)")
@@ -71,6 +98,13 @@ public final class TCPCommandServer: @unchecked Sendable {
             listener = newListener
         }
         newListener.start(queue: queue)
+        if let failure = startup.wait(timeout: .now() + 3) {
+            newListener.cancel()
+            lock.withLock {
+                if listener === newListener { listener = nil }
+            }
+            throw XCatError.server("Could not listen on 127.0.0.1:\(port): \(failure)")
+        }
     }
 
     public func stop() {

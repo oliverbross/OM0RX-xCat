@@ -1,41 +1,57 @@
-# SmartLink implementation boundary
+# SmartLink implementation
 
-OM0RX-xCat will use FlexRadio's current public-app authentication path:
-Authorization Code with PKCE in `ASWebAuthenticationSession`, a unique client
-ID, and a registered redirect URI. It will not extract or reuse the legacy
-xCAT/xLib client ID, passwords, refresh tokens, or Auth0 sessions.
+OM0RX-xCat uses the established FlexRadio public-client password-realm flow
+authorized for this project by its owner. The SmartLink password is transient:
+it is used for the initial exchange, cleared from memory after authentication,
+and never written to application settings or source control.
 
-## Credential request
+Refresh tokens are stored in macOS Keychain under an account-specific key based
+on the normalized SmartLink email address. Changing email cannot silently reuse
+another account's refresh token. Keychain items use
+`WhenUnlockedThisDeviceOnly`; **Forget Saved Session** deletes the selected
+account's token.
 
-Send this request to the FlexRadio developer program:
+## Connection chain
 
-> Please provision a native/public OAuth client for OM0RX-xCat using
-> Authorization Code with PKCE and register our macOS callback URI. Please
-> confirm which issued token SmartLink expects in `application register` and
-> the current SmartLink API redistribution terms.
+1. Obtain or refresh the SmartLink token set.
+2. Connect with normal system TLS verification to
+   `smartlink.flexradio.com:443`.
+3. Register the application, maintain broker pings, and request the selected
+   radio. A configured serial is strict; no other account radio is substituted.
+4. Retain the broker connection and obtain a fresh one-time WAN validation
+   handle.
+5. Connect to the radio's advertised TLS endpoint. Its self-signed certificate
+   is trust-on-first-use pinned in Keychain by radio serial. Certificate changes
+   are rejected until the operator uses **Reset Radio Certificate Pin**.
+6. Send `wan validate`, require its successful sequence-correlated response,
+   and wait for the radio handle before subscribing.
+7. Subscribe to the client, slice, and radio objects supported by SmartSDR
+   4.2.20, bind to the exact GUI station, and follow that station's slices.
+8. Rebuild the entire broker/radio chain with a fresh handle after failure.
 
-## Planned connection chain
+Commands have sequence-correlated acknowledgements and deadlines. A rejected
+tune, mode, split, CW, or PTT command is reported as failure instead of being
+treated as successful merely because the bytes reached the socket.
 
-1. Authenticate with PKCE and retain only the refresh token in Keychain.
-2. Connect with normal TLS verification to `smartlink.flexradio.com:443`.
-3. Register the application, maintain a ten-second broker ping, and obtain a
-   fresh one-time WAN handle for the selected radio.
-4. Connect to the radio's advertised TLS endpoint and validate the handle.
-5. Use certificate fingerprint approval/pinning for the radio's self-signed
-   WAN certificate; never use trust-all TLS.
-6. Register a UDP socket, subscribe to TCP state, resolve the chosen GUI
-   station and slice locally, and expose it through CAT/RigCtlD.
+## Slice and VFO mapping
 
-The SmartLink server connection and radio connection are one generation-safe
-session. Losing either invalidates the radio list, WAN handle, and cached slice
-state. Reconnection must build the chain again and never silently choose a
-different station or slice.
+SmartSDR slice IDs are not VFO letters. OM0RX-xCat maps the configured station's
+`index_letter` values to CAT VFO A/B and requires matching station ownership.
+The active slice is reported as RX; the slice with `tx=1` is reported as TX.
+These roles may be on the same or different slices. Each VFO retains its own
+frequency and mode in the app status model.
 
-Public-port or UPnP endpoints will be supported first. NAT hole punching needs
-a controlled live test because the public documentation does not fully specify
-that exchange.
+An incremental new-slice event is considered live unless the radio explicitly
+reports `in_use=0` or removes it. This is required because SmartSDR can omit
+`in_use=1` when B is opened after the subscription is established.
 
-Primary references:
+## Current network boundary
 
-- FlexRadio Developer Program: https://www.flexradio.com/api/developer-program/
-- SmartSDR TCP/IP API: https://github.com/flexradio/smartsdr-api-docs/wiki/SmartSDR-TCPIP-API
+v0.2.0 supports radios reachable through the broker-advertised public or UPnP
+TLS/TCP port. UDP registration and NAT hole punching are not implemented, so
+that topology remains unverified and is not claimed as supported.
+
+Primary protocol references:
+
+- [FlexRadio SmartLink API reference](https://www.flexradio.com/documentation/smartsdr-waveform-api-pdf/)
+- [SmartSDR TCP/IP API](https://github.com/flexradio/smartsdr-api-docs/wiki/SmartSDR-TCPIP-API)

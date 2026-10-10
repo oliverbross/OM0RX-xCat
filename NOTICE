@@ -5,5 +5,9 @@ This project contains a new implementation informed by protocol and packaging
 work from software owned by Oliver Bross, including OM0RX Flex Client,
 RUMlog-Wavelog-Bridge, and Flex-WavelogGate.
 
+SmartLink protocol behavior was cross-checked against AetherSDR, an independent
+GPL-3.0 implementation. OM0RX-xCat's Swift implementation is original to this
+project; no AetherSDR source files are included.
+
 FlexRadio, SmartSDR, SmartLink, RUMlogNG, and Kenwood are trademarks of their
 respective owners. This project is independent and is not endorsed by them.

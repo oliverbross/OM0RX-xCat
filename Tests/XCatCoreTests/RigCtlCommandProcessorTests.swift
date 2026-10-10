@@ -20,4 +20,24 @@ struct RigCtlCommandProcessorTests {
         #expect((await radio.snapshot()).frequencyHz == 7_100_000)
         #expect((await radio.snapshot()).mode == "CW")
     }
+
+    @Test func transmitRequiresOptInButUnkeyIsAlwaysAllowed() async {
+        let radio = SimulatedRadio()
+        let safeProcessor = RigCtlCommandProcessor(radio: radio)
+        #expect(await safeProcessor.handle("T 1") == "RPRT -1\n")
+        #expect((await radio.snapshot()).isTransmitting == false)
+
+        let enabledProcessor = RigCtlCommandProcessor(radio: radio, allowTransmit: true)
+        #expect(await enabledProcessor.handle("T 1") == "RPRT 0\n")
+        #expect((await radio.snapshot()).isTransmitting == true)
+        #expect(await safeProcessor.handle("T 0") == "RPRT 0\n")
+        #expect((await radio.snapshot()).isTransmitting == false)
+    }
+
+    @Test func doesNotReturnStaleStateWhenOffline() async {
+        let radio = SimulatedRadio(snapshot: RadioSnapshot(isConnected: false))
+        let processor = RigCtlCommandProcessor(radio: radio)
+        #expect(await processor.handle("f") == "RPRT -1\n")
+        #expect(await processor.handle("m") == "RPRT -1\n")
+    }
 }
