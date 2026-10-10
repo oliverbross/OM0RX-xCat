@@ -38,6 +38,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var rotatorTargetBearing: Double?
     @Published private(set) var rotatorTargetLabel = "No target"
     @Published private(set) var rotatorTargetSource = "Enter a bearing, grid, or call"
+    @Published private(set) var rotatorTargetBand = "Other"
     @Published private(set) var rotatorTargetCoordinate: GeoCoordinate?
     @Published private(set) var rotatorTargetDistanceKilometers: Double?
     @Published private(set) var rotatorIsMoving = false
@@ -905,7 +906,7 @@ final class AppModel: ObservableObject {
             let band = Self.normalizedBand(update.band.isEmpty ? currentBand : update.band)
             let ruledBearing = applyRotatorBandRules(selected, band: band)
             let label = update.callsign.isEmpty ? configuration.rotator.automaticSource.rawValue : update.callsign
-            setRotatorTarget(bearing: ruledBearing, label: label, source: source, coordinate: gridCoordinate)
+            setRotatorTarget(bearing: ruledBearing, label: label, source: source, coordinate: gridCoordinate, band: band)
             rotatorFeedStatus = "RUMlog: \(label) · \(Int(ruledBearing.rounded()))°"
 
             if update.commandedBearing != nil {
@@ -919,12 +920,13 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func setRotatorTarget(bearing: Double, label: String, source: String, coordinate: GeoCoordinate?) {
+    private func setRotatorTarget(bearing: Double, label: String, source: String, coordinate: GeoCoordinate?, band: String? = nil) {
         let normalized = RotatorGeometry.normalized(bearing)
         rotatorTargetBearing = normalized
         rotatorTargetLabel = label
         rotatorTargetSource = source
         rotatorTargetCoordinate = coordinate
+        rotatorTargetBand = band ?? currentBand
         if let home = rotatorHomeCoordinate {
             rotatorTargetDistanceKilometers = coordinate.map { RotatorGeometry.distanceKilometers(from: home, to: $0) }
             if coordinate == nil {

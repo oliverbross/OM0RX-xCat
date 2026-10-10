@@ -258,7 +258,7 @@ struct RotatorMonitorPanel: View {
                 .overlay(RoundedRectangle(cornerRadius: 7).stroke(cyan.opacity(0.22)))
 
             HStack(spacing: 7) {
-                Text(model.currentBand)
+                Text(model.rotatorTargetBand == "Other" ? model.currentBand : model.rotatorTargetBand)
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
                     .foregroundStyle(cyan)
                 Text(model.rotatorFeedStatus)
