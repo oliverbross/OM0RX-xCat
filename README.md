@@ -38,6 +38,9 @@ Download `OM0RX-xCat-v0.2.0.zip` from GitHub Releases, expand it, and move
 ID certificate for Oliver Bross. See the release notes for notarization status.
 
 The current source tree builds version 0.3.0 with Remote Station Agent support.
+Build 4 adds an explicit **Reconnect Agent** action in both the main window and
+menu-bar panel. Reconnect refreshes the authenticated HTTPS/WebSocket session
+without using the application Stop path or sending station-control commands.
 The published v0.2.0 release predates that transport.
 
 On first use:

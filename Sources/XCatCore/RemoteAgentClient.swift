@@ -65,6 +65,27 @@ public actor RemoteAgentClient: RadioControlling {
         transition(.stopped, "Stopped")
     }
 
+    /// Re-establish the read-only HTTPS/WebSocket session without invoking
+    /// any station command or the application's transmit-recovery stop path.
+    public func reconnectNow() {
+        guard shouldRun else {
+            start()
+            return
+        }
+        reconnectAttempt = 0
+        generation += 1
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        streamTask?.cancel()
+        streamTask = nil
+        watchdogTask?.cancel()
+        watchdogTask = nil
+        webSocket?.cancel(with: .goingAway, reason: nil)
+        webSocket = nil
+        markDisconnected("Manual reconnect requested")
+        Task { await connect() }
+    }
+
     public func snapshot() -> RadioSnapshot { value }
     public func primaryFrequency() -> Int64? { value.vfo("A")?.frequencyHz }
     public func secondaryFrequency() -> Int64? { value.vfo("B")?.frequencyHz }

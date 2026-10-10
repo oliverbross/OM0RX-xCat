@@ -4,6 +4,31 @@ import Testing
 
 @Suite("Remote Station Agent")
 struct RemoteAgentTests {
+    @Test func manualReconnectRepeatsOnlyTheReadOnlyStateRequest() async throws {
+        RemoteAgentURLProtocol.recorder.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RemoteAgentURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let client = try RemoteAgentClient(
+            baseURL: "https://station.invalid",
+            token: "test-credential",
+            session: session
+        )
+
+        await client.start()
+        #expect(await waitForStateRequestCount(1))
+        await client.reconnectNow()
+        #expect(await waitForStateRequestCount(2))
+        await client.stop()
+        session.invalidateAndCancel()
+
+        let requests = RemoteAgentURLProtocol.recorder.snapshot()
+        #expect(requests.count >= 2)
+        #expect(requests.allSatisfy { $0.httpMethod == "GET" })
+        #expect(requests.allSatisfy { $0.url?.path == "/api/v1/state" })
+        #expect(requests.contains { $0.url?.path == "/api/v1/commands" } == false)
+    }
+
     @Test func decodesAuthoritativeTwoVFOAndStationState() throws {
         let decoded = try RemoteAgentStateDecoder.stateResponse(Data(Self.safeState.utf8))
         let snapshot = decoded.snapshot
@@ -86,7 +111,15 @@ struct RemoteAgentTests {
         #expect(throws: (any Error).self) { try RemoteAgentEndpoint("https://station.example/?token=secret") }
     }
 
-    private static let safeState = """
+    private func waitForStateRequestCount(_ count: Int) async -> Bool {
+        for _ in 0..<100 {
+            if RemoteAgentURLProtocol.recorder.snapshot().count >= count { return true }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return false
+    }
+
+    fileprivate static let safeState = """
     {
       "success": true,
       "state": {
@@ -149,4 +182,51 @@ struct RemoteAgentTests {
       }
     }
     """
+}
+
+private final class RequestRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var requests: [URLRequest] = []
+
+    func append(_ request: URLRequest) {
+        lock.withLock { requests.append(request) }
+    }
+
+    func reset() {
+        lock.withLock { requests.removeAll() }
+    }
+
+    func snapshot() -> [URLRequest] {
+        lock.withLock { requests }
+    }
+}
+
+private final class RemoteAgentURLProtocol: URLProtocol, @unchecked Sendable {
+    static let recorder = RequestRecorder()
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        request.url?.scheme == "https" && request.url?.path == "/api/v1/state"
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        Self.recorder.append(request)
+        guard let url = request.url,
+              let response = HTTPURLResponse(
+                  url: url,
+                  statusCode: 200,
+                  httpVersion: "HTTP/1.1",
+                  headerFields: ["Content-Type": "application/json"]
+              ) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+        let data = Data(RemoteAgentTests.safeState.utf8)
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }

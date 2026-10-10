@@ -33,6 +33,10 @@ struct MenuBarView: View {
             Divider()
             HStack {
                 Button("Open OM0RX-xCat") { openWindow(id: "main") }
+                if model.isRunning, model.configuration.connectionKind == .remoteAgent {
+                    Button("Reconnect Agent") { model.reconnectRemoteAgent() }
+                        .help("Re-establish HTTPS and WebSocket state without sending station commands")
+                }
                 Spacer()
                 Button("Quit") { NSApplication.shared.terminate(nil) }
             }

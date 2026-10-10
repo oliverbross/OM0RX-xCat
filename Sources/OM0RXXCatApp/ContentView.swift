@@ -93,6 +93,10 @@ struct ContentView: View {
                 Button("Save Settings") { model.save() }
                     .disabled(model.isRunning)
                 Spacer()
+                if model.isRunning, model.configuration.connectionKind == .remoteAgent {
+                    Button("Reconnect Agent") { model.reconnectRemoteAgent() }
+                        .help("Re-establish HTTPS and WebSocket state without sending station commands")
+                }
                 Button(model.isRunning ? "Stop" : "Start") {
                     model.isRunning ? model.stop() : model.start()
                 }

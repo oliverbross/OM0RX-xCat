@@ -342,6 +342,17 @@ final class AppModel: ObservableObject {
         await activeStop?.value
     }
 
+    func reconnectRemoteAgent() {
+        guard isRunning, let remoteAgent else {
+            record("Agent reconnect unavailable: Remote Agent is not running")
+            return
+        }
+        isRadioConnected = false
+        status = "Reconnecting to Remote Station Agent"
+        record("Agent: Manual reconnect requested")
+        Task { await remoteAgent.reconnectNow() }
+    }
+
     func applyRemoteRIT() {
         runRemoteControl("RIT") { client in
             try await client.setRIT(enabled: self.remoteRITEnabled, offsetHz: self.remoteRITOffsetHz, vfo: nil)
