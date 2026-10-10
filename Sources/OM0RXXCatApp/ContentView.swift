@@ -49,6 +49,9 @@ struct ContentView: View {
         }
         .padding(Layout.generous)
         .frame(minWidth: 760, idealWidth: 900, maxWidth: 1_040, minHeight: 520, idealHeight: 620)
+        .onChange(of: model.radioSnapshot?.frequencyHz, initial: true) { _, _ in
+            DispatchQueue.main.async { model.noteTelemetryRendered(surface: "Status") }
+        }
     }
 
     private var header: some View {
@@ -127,6 +130,13 @@ struct ContentView: View {
                     .monospacedDigit()
                     .lineLimit(3)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                if model.configuration.connectionKind == .remoteAgent {
+                    Text(model.telemetryLatencySummary)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .help(model.telemetryLatencySummary)
+                }
             }
             .padding(Layout.tight)
             .frame(maxWidth: .infinity, minHeight: 94, alignment: .topLeading)
@@ -230,7 +240,11 @@ struct ContentView: View {
                     Button("Apply power") { model.applyRemoteRFPower() }
                         .disabled(!model.isRadioConnected || !model.configuration.allowCATTransmit)
                     Spacer()
-                    ForEach(RemoteStationAction.allCases, id: \.self) { action in
+                    if let action = model.amplifierToggleAction {
+                        Button(action.rawValue.capitalized) { model.performRemoteStationAction(action) }
+                            .disabled(!model.remoteActionAllowed(action))
+                    }
+                    ForEach([RemoteStationAction.tune, .cancel], id: \.self) { action in
                         Button(action.rawValue.capitalized) { model.performRemoteStationAction(action) }
                             .disabled(!model.remoteActionAllowed(action))
                     }

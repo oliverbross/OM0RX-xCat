@@ -165,27 +165,27 @@ struct RemoteAgentDecodedState: Equatable, Sendable {
 }
 
 enum RemoteAgentStateDecoder {
-    static func stateResponse(_ data: Data) throws -> RemoteAgentDecodedState {
+    static func stateResponse(_ data: Data, receivedAt: Date = Date()) throws -> RemoteAgentDecodedState {
         let response = try JSONDecoder().decode(StateResponse.self, from: data)
         guard response.success else { throw XCatError.server("Remote Agent rejected the state request.") }
-        return try decode(response.state)
+        return try decode(response.state, receivedAt: receivedAt)
     }
 
-    static func streamMessage(_ data: Data) throws -> RemoteAgentDecodedState? {
+    static func streamMessage(_ data: Data, receivedAt: Date = Date()) throws -> RemoteAgentDecodedState? {
         let message = try JSONDecoder().decode(StreamMessage.self, from: data)
         guard message.type == "state", let state = message.state else { return nil }
-        return try decode(state)
+        return try decode(state, receivedAt: receivedAt)
     }
 
-    static func commandResponse(_ data: Data) throws -> RemoteAgentDecodedState? {
+    static func commandResponse(_ data: Data, receivedAt: Date = Date()) throws -> RemoteAgentDecodedState? {
         let response = try JSONDecoder().decode(CommandResponse.self, from: data)
         guard response.success else {
             throw XCatError.server(response.error?.message ?? "Remote Agent rejected the command.")
         }
-        return try response.state.map(decode)
+        return try response.state.map { try decode($0, receivedAt: receivedAt) }
     }
 
-    private static func decode(_ state: StateDTO) throws -> RemoteAgentDecodedState {
+    private static func decode(_ state: StateDTO, receivedAt: Date) throws -> RemoteAgentDecodedState {
         guard state.protocolVersion == 1 else {
             throw XCatError.server("Remote Agent protocol version \(state.protocolVersion) is not supported.")
         }
@@ -283,6 +283,7 @@ enum RemoteAgentStateDecoder {
             allowedActions: Set(station.allowedActions ?? []),
             inhibitors: inhibitors,
             kpaSummary: kpaSummary(kpa),
+            kpaOperate: kpa?.operate,
             katSummary: katSummary(kat),
             routeSummary: routeSummary(route),
             alarmSummary: activeAlarmCount == 0 ? "ALARM clear" : "ALARM \(activeAlarmCount)",
@@ -311,7 +312,9 @@ enum RemoteAgentStateDecoder {
             station: radio.stationName ?? "Remote Agent",
             vfos: vfos,
             remoteStationStatus: status,
-            rfPowerWatts: radio.drive.map { Int($0.rounded()) }
+            rfPowerWatts: radio.drive.map { Int($0.rounded()) },
+            agentObservedAt: radio.updatedAt.map(Date.init(timeIntervalSince1970:)),
+            transportReceivedAt: receivedAt
         )
         return RemoteAgentDecodedState(snapshot: snapshot, cwSpeed: radio.cwSpeed ?? 25)
     }
@@ -434,6 +437,7 @@ private struct RadioDTO: Decodable {
     var vfos: [String: VFODTO]?
     var activeReceive: VFODTO?
     var transmit: VFODTO?
+    var updatedAt: Double?
 
     init() {}
 
@@ -449,6 +453,7 @@ private struct RadioDTO: Decodable {
         case ritOffsetHz = "rit_freq"
         case xitEnabled = "xit_on"
         case xitOffsetHz = "xit_freq"
+        case updatedAt = "updated_at"
     }
 
     var resolvedFrequencyHz: Int64? {

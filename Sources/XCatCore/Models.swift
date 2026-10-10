@@ -62,6 +62,7 @@ public struct RemoteStationStatus: Equatable, Sendable {
     public var allowedActions: Set<String>
     public var inhibitors: [String]
     public var kpaSummary: String
+    public var kpaOperate: Bool?
     public var katSummary: String
     public var routeSummary: String
     public var alarmSummary: String
@@ -89,6 +90,7 @@ public struct RemoteStationStatus: Equatable, Sendable {
         allowedActions: Set<String> = [],
         inhibitors: [String] = ["Agent state is not available"],
         kpaSummary: String = "KPA unknown",
+        kpaOperate: Bool? = nil,
         katSummary: String = "KAT unknown",
         routeSummary: String = "Route unknown",
         alarmSummary: String = "ALARM unknown",
@@ -115,6 +117,7 @@ public struct RemoteStationStatus: Equatable, Sendable {
         self.allowedActions = allowedActions
         self.inhibitors = inhibitors
         self.kpaSummary = kpaSummary
+        self.kpaOperate = kpaOperate
         self.katSummary = katSummary
         self.routeSummary = routeSummary
         self.alarmSummary = alarmSummary
@@ -146,6 +149,8 @@ public struct RadioSnapshot: Equatable, Sendable {
     public var vfos: [RadioVFO]
     public var remoteStationStatus: RemoteStationStatus?
     public var rfPowerWatts: Int?
+    public var agentObservedAt: Date?
+    public var transportReceivedAt: Date?
 
     public init(
         frequencyHz: Int64 = 14_074_000,
@@ -158,7 +163,9 @@ public struct RadioSnapshot: Equatable, Sendable {
         station: String = "",
         vfos: [RadioVFO]? = nil,
         remoteStationStatus: RemoteStationStatus? = nil,
-        rfPowerWatts: Int? = nil
+        rfPowerWatts: Int? = nil,
+        agentObservedAt: Date? = nil,
+        transportReceivedAt: Date? = nil
     ) {
         self.frequencyHz = frequencyHz
         self.mode = mode
@@ -170,6 +177,8 @@ public struct RadioSnapshot: Equatable, Sendable {
         self.station = station
         self.remoteStationStatus = remoteStationStatus
         self.rfPowerWatts = rfPowerWatts
+        self.agentObservedAt = agentObservedAt
+        self.transportReceivedAt = transportReceivedAt
         self.vfos = vfos ?? [RadioVFO(
             letter: slice,
             frequencyHz: frequencyHz,

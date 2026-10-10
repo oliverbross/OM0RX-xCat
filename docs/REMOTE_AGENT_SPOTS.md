@@ -2,8 +2,10 @@
 
 OM0RX-xCat 0.4 receives RUMlogNG's N1MM-compatible `<spot>` UDP messages on
 loopback and forwards panadapter markers through the authenticated Remote
-Station Agent. It does not expose FLEX TCP port 4992 to the Internet and it
-does not send CAT, PTT, TUNE, CWX, frequency, mode, antenna, or RF-power writes.
+Station Agent. This spot path does not expose FLEX TCP port 4992 to the
+Internet and does not send CAT, PTT, TUNE, CWX, frequency, mode, antenna, or
+RF-power writes. The rest of OM0RX-xCat retains its separately enabled full CAT
+and station-control functionality.
 
 ## Mac configuration
 
@@ -101,6 +103,31 @@ transmit RF.
   readiness. A stale radio snapshot now displays **Agent connected** / **STALE**
   instead of falsely presenting the healthy HTTPS/WebSocket session as a
   reconnect loop.
-- Final Maestro display acceptance remains pending only on deployment and a
-  controlled restart of the updated Windows agent. No RF transmission was
-  used during this verification.
+- The Windows agent was subsequently deployed at
+  `b436936e0377122fad5e3d32afa7f3c6f69fe5c4`. A fresh Mac run received
+  continuous authenticated HTTPS/WebSocket state, retained full control mode,
+  and showed live FLEX, KPA500, KAT500, route, interlock, and alarm state.
+- Eight discrete frequency-change samples separated agent observation from Mac
+  receipt and SwiftUI rendering. Agent-to-Mac latency ranged from 155 ms to
+  5,088 ms (median 1,239 ms), while Mac receipt-to-Status/Monitor render ranged
+  from 35 ms to 94 ms (median 43 ms). The remaining slow updates are therefore
+  upstream of SwiftUI; the Mac render path is not the source of multi-second
+  delay.
+- The monitor header now renders both full-precision VFOs when B is present as
+  compact `A 14.190.000` and `B 14.195.000` readouts. When the KPA is in
+  standby it shows only **Operate**; in operate it shows only **Standby**.
+- Six new styled markers (`N0GRY3` through `N0CYN3`) were acknowledged by FLEX
+  through the deployed agent. Real RUMlog markers continued to receive the
+  same acknowledgement. Visual pixel confirmation on the connected Maestro is
+  still an operator check because the Mac client cannot read the Maestro
+  display.
+- One attempted **Operate** before this build was rejected with
+  `FLEX RF drive is 65 W, expected 25 W`. The Mac command path was correct.
+  The Windows driver had consumed the subscribed live-drive update while
+  waiting for the command response without updating its authoritative cache.
+  The shared Windows branch now updates that cache and includes a regression
+  test; deployment and a controlled hardware-state verification remain for the
+  Windows session.
+- The complete Swift suite passed: 35 tests, 0 failures, across 7 suites. The
+  installed application remained validly signed. No RF was keyed by automated
+  acceptance.

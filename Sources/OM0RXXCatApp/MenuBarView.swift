@@ -66,15 +66,16 @@ struct MenuBarView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .onChange(of: model.radioSnapshot?.frequencyHz, initial: true) { _, _ in
+            let surface = isDetached ? "Monitor" : "Menu"
+            DispatchQueue.main.async { model.noteTelemetryRendered(surface: surface) }
+        }
     }
 
     private var header: some View {
         HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(formatFrequency(model.radioSnapshot?.frequencyHz))
-                    .font(.system(size: 27, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(model.radioSnapshot?.isTransmitting == true ? .red : cyan)
+                headerFrequencies
                 Text(headerDetail)
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(cyan.opacity(0.86))
@@ -90,6 +91,40 @@ struct MenuBarView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(Color(red: 0.03, green: 0.14, blue: 0.21))
+    }
+
+    private var headerFrequencies: some View {
+        HStack(spacing: 14) {
+            if let vfoA = model.radioSnapshot?.vfo("A") {
+                headerFrequency(vfoA)
+            }
+            if let vfoB = model.radioSnapshot?.vfo("B") {
+                headerFrequency(vfoB)
+            }
+            if model.radioSnapshot?.vfo("A") == nil, model.radioSnapshot?.vfo("B") == nil {
+                Text(formatFrequency(model.radioSnapshot?.frequencyHz))
+                    .font(.system(size: 27, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(cyan)
+            }
+        }
+    }
+
+    private func headerFrequency(_ vfo: RadioVFO) -> some View {
+        Text("\(vfo.letter) \(formatCompactFrequency(vfo.frequencyHz))")
+            .font(.system(
+                size: model.radioSnapshot?.vfo("B") == nil ? 27 : 20,
+                weight: vfo.isReceive ? .bold : .semibold,
+                design: .rounded
+            ))
+            .monospacedDigit()
+            .foregroundStyle(headerFrequencyColor(vfo))
+            .lineLimit(1)
+    }
+
+    private func headerFrequencyColor(_ vfo: RadioVFO) -> Color {
+        if model.radioSnapshot?.isTransmitting == true, vfo.isTransmit { return .red }
+        return vfo.isReceive ? cyan : cyan.opacity(0.65)
     }
 
     private var vfoStrip: some View {
@@ -158,7 +193,11 @@ struct MenuBarView: View {
 
     private var actionBar: some View {
         HStack(spacing: 7) {
-            ForEach(RemoteStationAction.allCases, id: \.self) { action in
+            if let action = model.amplifierToggleAction {
+                Button(action.rawValue.capitalized) { model.performRemoteStationAction(action) }
+                    .disabled(!model.remoteActionAllowed(action))
+            }
+            ForEach([RemoteStationAction.tune, .cancel], id: \.self) { action in
                 Button(action.rawValue.capitalized) { model.performRemoteStationAction(action) }
                     .disabled(!model.remoteActionAllowed(action))
             }
@@ -250,6 +289,13 @@ struct MenuBarView: View {
         let khz = (frequencyHz % 1_000_000) / 1_000
         let hz = frequencyHz % 1_000
         return String(format: "%lld.%03lld.%03lld MHz", mhz, khz, hz)
+    }
+
+    private func formatCompactFrequency(_ frequencyHz: Int64) -> String {
+        let mhz = frequencyHz / 1_000_000
+        let khz = (frequencyHz % 1_000_000) / 1_000
+        let hz = frequencyHz % 1_000
+        return String(format: "%lld.%03lld.%03lld", mhz, khz, hz)
     }
 
     private func footerText(_ station: RemoteStationStatus?) -> String {

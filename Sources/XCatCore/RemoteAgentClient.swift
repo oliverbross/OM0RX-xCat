@@ -233,8 +233,9 @@ public actor RemoteAgentClient: RadioControlling {
     private func fetchState() async throws -> RemoteAgentDecodedState {
         let request = endpoint.httpRequest(path: "/api/v1/state", token: token)
         let (data, response) = try await session.data(for: request)
+        let receivedAt = Date()
         try Self.validate(response: response, data: data)
-        return try RemoteAgentStateDecoder.stateResponse(data)
+        return try RemoteAgentStateDecoder.stateResponse(data, receivedAt: receivedAt)
     }
 
     private func openStream(generation currentGeneration: Int) {
@@ -260,14 +261,15 @@ public actor RemoteAgentClient: RadioControlling {
         do {
             while shouldRun, currentGeneration == generation, !Task.isCancelled {
                 let message = try await socket.receive()
-                lastStreamMessage = Date()
+                let receivedAt = Date()
+                lastStreamMessage = receivedAt
                 let data: Data
                 switch message {
                 case let .data(value): data = value
                 case let .string(value): data = Data(value.utf8)
                 @unknown default: continue
                 }
-                if let decoded = try RemoteAgentStateDecoder.streamMessage(data) { apply(decoded) }
+                if let decoded = try RemoteAgentStateDecoder.streamMessage(data, receivedAt: receivedAt) { apply(decoded) }
             }
         } catch {
             connectionFailed("Remote Agent stream interrupted: \(error.localizedDescription)", generation: currentGeneration)
@@ -297,8 +299,9 @@ public actor RemoteAgentClient: RadioControlling {
         for attempt in 0..<2 {
             do {
                 let (data, response) = try await session.data(for: request)
+                let receivedAt = Date()
                 try Self.validate(response: response, data: data)
-                if let decoded = try RemoteAgentStateDecoder.commandResponse(data) { apply(decoded) }
+                if let decoded = try RemoteAgentStateDecoder.commandResponse(data, receivedAt: receivedAt) { apply(decoded) }
                 return
             } catch {
                 lastError = error

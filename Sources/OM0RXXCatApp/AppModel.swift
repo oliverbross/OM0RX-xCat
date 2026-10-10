@@ -13,6 +13,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var isRemoteAgentConnected = false
     @Published private(set) var radioSnapshot: RadioSnapshot?
     @Published private(set) var lastSnapshotAt: Date?
+    @Published private(set) var telemetryLatencySummary = "Waiting for a frequency change"
     @Published var smartLinkPassword = ""
     @Published var remoteAgentToken = ""
     @Published private(set) var remoteStationStatus: RemoteStationStatus?
@@ -44,9 +45,22 @@ final class AppModel: ObservableObject {
     private var stopTask: Task<Void, Never>?
     private var spotCapabilityWarningShown = false
     private var lastSpotError = ""
+    private var lastTimedFrequency: Int64?
+    private var pendingTelemetryTiming: TelemetryTiming?
+
+    private struct TelemetryTiming {
+        let frequencyHz: Int64
+        let receivedAt: Date
+        let transportMilliseconds: Int?
+        var renderMilliseconds: [String: Int] = [:]
+    }
 
     var isStationReady: Bool {
         isRadioConnected
+    }
+
+    var amplifierToggleAction: RemoteStationAction? {
+        remoteStationStatus?.kpaOperate.map { $0 ? .standby : .operate }
     }
 
     init() {
@@ -131,12 +145,7 @@ final class AppModel: ObservableObject {
                     },
                     onSnapshot: { [weak self] snapshot in
                         Task { @MainActor in
-                            self?.isRadioConnected = snapshot.isConnected
-                            self?.radioSnapshot = snapshot
-                            self?.lastSnapshotAt = Date()
-                            self?.remoteStationStatus = snapshot.remoteStationStatus
-                            self?.status = Self.radioStatus(snapshot)
-                            self?.refreshSpotBridgeStatus()
+                            self?.applyRemoteAgentSnapshot(snapshot)
                         }
                     }
                 )
@@ -358,6 +367,9 @@ final class AppModel: ObservableObject {
         isRemoteAgentConnected = false
         radioSnapshot = nil
         lastSnapshotAt = nil
+        telemetryLatencySummary = "Waiting for a frequency change"
+        lastTimedFrequency = nil
+        pendingTelemetryTiming = nil
         remoteStationStatus = nil
         remoteConfigurationLoaded = false
         remoteConfigurationStatus = "Connect to load station settings"
@@ -398,6 +410,21 @@ final class AppModel: ObservableObject {
         status = "Reconnecting to Remote Station Agent"
         record("Agent: Manual reconnect requested")
         Task { await remoteAgent.reconnectNow() }
+    }
+
+    func noteTelemetryRendered(surface: String) {
+        guard configuration.connectionKind == .remoteAgent,
+              let frequencyHz = radioSnapshot?.frequencyHz,
+              var timing = pendingTelemetryTiming,
+              timing.frequencyHz == frequencyHz,
+              timing.renderMilliseconds[surface] == nil else { return }
+        let isFirstRender = timing.renderMilliseconds.isEmpty
+        timing.renderMilliseconds[surface] = max(0, Int(Date().timeIntervalSince(timing.receivedAt) * 1_000))
+        pendingTelemetryTiming = timing
+        telemetryLatencySummary = Self.latencySummary(timing)
+        if isFirstRender {
+            record("Latency \(surface): \(telemetryLatencySummary)")
+        }
     }
 
     func restartSpotBridge() {
@@ -499,6 +526,37 @@ final class AppModel: ObservableObject {
         if events.count > 200 {
             events.removeFirst(events.count - 200)
         }
+    }
+
+    private func applyRemoteAgentSnapshot(_ snapshot: RadioSnapshot) {
+        isRadioConnected = snapshot.isConnected
+        radioSnapshot = snapshot
+        lastSnapshotAt = Date()
+        remoteStationStatus = snapshot.remoteStationStatus
+        status = Self.radioStatus(snapshot)
+        refreshSpotBridgeStatus()
+
+        guard snapshot.frequencyHz != lastTimedFrequency,
+              let receivedAt = snapshot.transportReceivedAt else { return }
+        let transportMilliseconds = snapshot.agentObservedAt.map {
+            max(0, Int(receivedAt.timeIntervalSince($0) * 1_000))
+        }
+        let timing = TelemetryTiming(
+            frequencyHz: snapshot.frequencyHz,
+            receivedAt: receivedAt,
+            transportMilliseconds: transportMilliseconds
+        )
+        lastTimedFrequency = snapshot.frequencyHz
+        pendingTelemetryTiming = timing
+        telemetryLatencySummary = Self.latencySummary(timing)
+    }
+
+    private static func latencySummary(_ timing: TelemetryTiming) -> String {
+        let transport = timing.transportMilliseconds.map { "Agent→Mac \($0) ms" } ?? "Agent→Mac --"
+        let renders = timing.renderMilliseconds.keys.sorted().map {
+            "Mac→\($0) \(timing.renderMilliseconds[$0] ?? 0) ms"
+        }
+        return ([transport] + renders).joined(separator: " · ")
     }
 
     private func startSpotBridge(radio: any RadioControlling) throws {

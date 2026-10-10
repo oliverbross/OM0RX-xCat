@@ -53,7 +53,8 @@ struct RemoteAgentTests {
     }
 
     @Test func decodesAuthoritativeTwoVFOAndStationState() throws {
-        let decoded = try RemoteAgentStateDecoder.stateResponse(Data(Self.safeState.utf8))
+        let receivedAt = Date(timeIntervalSince1970: 1_760_000_000.75)
+        let decoded = try RemoteAgentStateDecoder.stateResponse(Data(Self.safeState.utf8), receivedAt: receivedAt)
         let snapshot = decoded.snapshot
 
         #expect(snapshot.isConnected)
@@ -70,6 +71,7 @@ struct RemoteAgentTests {
         #expect(decoded.cwSpeed == 28)
         #expect(snapshot.remoteStationStatus?.inhibitors.isEmpty == true)
         #expect(snapshot.remoteStationStatus?.kpaSummary == "KPA OPERATE")
+        #expect(snapshot.remoteStationStatus?.kpaOperate == true)
         #expect(snapshot.remoteStationStatus?.katSummary == "KAT ANT1")
         #expect(snapshot.remoteStationStatus?.routeSummary == "Route 17m Beam")
         #expect(snapshot.remoteStationStatus?.alarmSummary == "ALARM clear")
@@ -81,6 +83,8 @@ struct RemoteAgentTests {
         #expect(snapshot.remoteStationStatus?.kpaDetailPrimary.contains("OUT 0W") == true)
         #expect(snapshot.remoteStationStatus?.katDetailPrimary.contains("SWR 1.25") == true)
         #expect(snapshot.remoteStationStatus?.routeDetail == "FLEX ANT1 → KPA500 → KAT500 → Beam")
+        #expect(snapshot.agentObservedAt == Date(timeIntervalSince1970: 1_760_000_000.25))
+        #expect(snapshot.transportReceivedAt == receivedAt)
     }
 
     @Test func reportsStaleUncommissionedAlarmStateAsAdvisories() throws {
@@ -203,6 +207,7 @@ struct RemoteAgentTests {
           "stale": false,
           "station_bound": true,
           "station_name": "Maestro",
+            "updated_at": 1760000000.25,
           "mox": false,
           "interlock_state": "READY",
           "cw_speed": 28,
