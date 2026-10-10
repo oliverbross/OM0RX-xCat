@@ -26,6 +26,14 @@ Copyright © 2026 Oliver Bross OM0RX. Licensed under GPL-3.0-only.
 - Built-in RUMlogNG UDP spot bridge with independent Logbook and Contest rule
   sets, priorities, colours, and marker lifetimes. Spots are sent through the
   authenticated Remote Station Agent and never key PTT or transmit RF.
+- Mac-only DCU-1 rotator control over TCP, independent from the Windows Remote
+  Station Agent. It imports an existing Rotor configuration, polls live azimuth,
+  supports target/clockwise/counter-clockwise/stop commands, RUMlog UDP targets,
+  Maidenhead and callsign-grid bearing calculation, per-band offsets, and
+  bidirectional antennas.
+- A dedicated Rotator settings tab and a wider station monitor with a live
+  compass, beam-width sector, current and target bearings, world map, great-circle
+  target line, movement state, and direct controls.
 - Strict radio-serial and SmartSDR station selection.
 - Live two-line VFO display. A and B each show their frequency, mode, and
   independent `RX` and `TX` roles from the radio's slice flags.
@@ -59,6 +67,8 @@ Build 6 adds the complete Station configuration editor, rich live station
 monitor, and an **Undock Monitor** window. Open it from the menu-bar panel or
 with **Monitor** in the main window; it shares the existing connection and does
 not create a second radio session.
+Build 7 adds the independent Mac rotator subsystem and the wide radio-plus-rotator
+monitor. See [`docs/ROTATOR.md`](docs/ROTATOR.md).
 Remote Agent transport health and radio-telemetry readiness are displayed
 separately, so a stale radio advisory does not masquerade as a reconnecting
 HTTPS/WebSocket session.

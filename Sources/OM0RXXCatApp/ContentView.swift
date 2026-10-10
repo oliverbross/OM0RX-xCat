@@ -12,6 +12,7 @@ struct ContentView: View {
         case status
         case activity
         case spots
+        case rotator
         case station
         case configuration
     }
@@ -39,6 +40,9 @@ struct ContentView: View {
                 spotsTab
                     .tabItem { Label("Spots", systemImage: "scope") }
                     .tag(WorkspaceTab.spots)
+                RotatorSettingsView()
+                    .tabItem { Label("Rotator", systemImage: "location.north.circle") }
+                    .tag(WorkspaceTab.rotator)
                 stationTab
                     .tabItem { Label("Station", systemImage: "antenna.radiowaves.left.and.right.circle") }
                     .tag(WorkspaceTab.station)

@@ -19,40 +19,45 @@ struct MenuBarView: View {
     private let amber = Color(red: 0.99, green: 0.79, blue: 0.39)
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            vfoStrip
-            metrics
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+        HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                header
+                vfoStrip
+                metrics
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
 
-            if let station = model.remoteStationStatus {
-                telemetryCard(
-                    title: station.kpaDetailPrimary,
-                    detail: station.kpaDetailSecondary,
-                    tint: station.kpaSummary.contains("OPERATE") ? green : amber,
-                    background: Color(red: 0.10, green: 0.14, blue: 0.24)
-                )
-                telemetryCard(
-                    title: station.katDetailPrimary,
-                    detail: station.katDetailSecondary,
-                    tint: station.katSummary.contains("tuning") ? amber : cyan,
-                    background: Color(red: 0.05, green: 0.19, blue: 0.22)
-                )
-                routeCard(station)
-                actionBar
-                footer(station)
-            } else {
-                ContentUnavailableView(
-                    "Waiting for station telemetry",
-                    systemImage: "antenna.radiowaves.left.and.right.slash",
-                    description: Text(model.status)
-                )
-                .frame(height: 176)
-                footer(nil)
+                if let station = model.remoteStationStatus {
+                    telemetryCard(
+                        title: station.kpaDetailPrimary,
+                        detail: station.kpaDetailSecondary,
+                        tint: station.kpaSummary.contains("OPERATE") ? green : amber,
+                        background: Color(red: 0.10, green: 0.14, blue: 0.24)
+                    )
+                    telemetryCard(
+                        title: station.katDetailPrimary,
+                        detail: station.katDetailSecondary,
+                        tint: station.katSummary.contains("tuning") ? amber : cyan,
+                        background: Color(red: 0.05, green: 0.19, blue: 0.22)
+                    )
+                    routeCard(station)
+                    actionBar
+                    footer(station)
+                } else {
+                    ContentUnavailableView(
+                        "Waiting for station telemetry",
+                        systemImage: "antenna.radiowaves.left.and.right.slash",
+                        description: Text(model.status)
+                    )
+                    .frame(height: 176)
+                    footer(nil)
+                }
             }
+            .frame(width: 548)
+            Divider().overlay(cyan.opacity(0.18))
+            RotatorMonitorPanel()
         }
-        .frame(width: 548)
+        .frame(width: 903)
         .background(
             LinearGradient(
                 colors: [Color(red: 0.025, green: 0.06, blue: 0.11), Color(red: 0.02, green: 0.035, blue: 0.065)],

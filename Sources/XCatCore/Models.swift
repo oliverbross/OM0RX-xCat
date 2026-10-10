@@ -218,6 +218,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     public var allowCATTransmit: Bool
     public var launchServersAutomatically: Bool
     public var spotBridge: SpotBridgeConfiguration
+    public var rotator: RotatorConfiguration
 
     public init(
         connectionKind: ConnectionKind = .smartLink,
@@ -235,7 +236,8 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         superviseLegacyXCAT: Bool = true,
         allowCATTransmit: Bool = false,
         launchServersAutomatically: Bool = true,
-        spotBridge: SpotBridgeConfiguration = SpotBridgeConfiguration()
+        spotBridge: SpotBridgeConfiguration = SpotBridgeConfiguration(),
+        rotator: RotatorConfiguration = RotatorConfiguration()
     ) {
         self.connectionKind = connectionKind
         self.radioHost = radioHost
@@ -253,13 +255,14 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         self.allowCATTransmit = allowCATTransmit
         self.launchServersAutomatically = launchServersAutomatically
         self.spotBridge = spotBridge
+        self.rotator = rotator
     }
 
     private enum CodingKeys: String, CodingKey {
         case connectionKind, radioHost, radioPort, stationName, sliceLetter
         case smartLinkEmail, smartLinkRadioSerial, remoteAgentBaseURL
         case catPort, rigCtlPort, legacyXCATHost, legacyXCATPort
-        case superviseLegacyXCAT, allowCATTransmit, launchServersAutomatically, spotBridge
+        case superviseLegacyXCAT, allowCATTransmit, launchServersAutomatically, spotBridge, rotator
     }
 
     public init(from decoder: any Decoder) throws {
@@ -280,6 +283,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         allowCATTransmit = try values.decodeIfPresent(Bool.self, forKey: .allowCATTransmit) ?? false
         launchServersAutomatically = try values.decodeIfPresent(Bool.self, forKey: .launchServersAutomatically) ?? true
         spotBridge = try values.decodeIfPresent(SpotBridgeConfiguration.self, forKey: .spotBridge) ?? SpotBridgeConfiguration()
+        rotator = try values.decodeIfPresent(RotatorConfiguration.self, forKey: .rotator) ?? RotatorConfiguration()
     }
 }
 

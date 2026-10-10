@@ -31,6 +31,8 @@ struct OM0RXXCatApp: App {
                     appDelegate.model = model
                     if model.configuration.launchServersAutomatically {
                         model.start()
+                    } else {
+                        model.startRotatorIfNeeded()
                     }
                 }
         }
@@ -42,7 +44,7 @@ struct OM0RXXCatApp: App {
                 .environmentObject(model)
         }
         .windowResizability(.contentSize)
-        .defaultSize(width: 548, height: 390)
+        .defaultSize(width: 903, height: 420)
 
         MenuBarExtra {
             MenuBarView()

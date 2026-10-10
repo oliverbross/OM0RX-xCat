@@ -31,11 +31,24 @@ final class AppModel: ObservableObject {
     @Published private(set) var remoteConfigurationLoaded = false
     @Published private(set) var remoteConfigurationStatus = "Connect to load station settings"
     @Published private(set) var remoteConfigurationBusy = false
+    @Published private(set) var rotatorConnectionState = DCU1RotatorClient.State.stopped
+    @Published private(set) var rotatorStatus = "Not connected"
+    @Published private(set) var rotatorFeedStatus = "RUMlog feed stopped"
+    @Published private(set) var rotatorAzimuth: Double?
+    @Published private(set) var rotatorTargetBearing: Double?
+    @Published private(set) var rotatorTargetLabel = "No target"
+    @Published private(set) var rotatorTargetSource = "Enter a bearing, grid, or call"
+    @Published private(set) var rotatorTargetCoordinate: GeoCoordinate?
+    @Published private(set) var rotatorTargetDistanceKilometers: Double?
+    @Published private(set) var rotatorIsMoving = false
+    @Published var rotatorTargetInput = ""
 
     private var catServer: TCPCommandServer?
     private var rigCtlServer: TCPCommandServer?
     private var logbookSpotReceiver: UDPSpotReceiver?
     private var contestSpotReceiver: UDPSpotReceiver?
+    private var rotatorFeedReceiver: UDPSpotReceiver?
+    private var rotatorClient: DCU1RotatorClient?
     private var radio: (any RadioControlling)?
     private var flexRadio: FlexRadioClient?
     private var smartLinkRadio: SmartLinkRadioClient?
@@ -47,6 +60,9 @@ final class AppModel: ObservableObject {
     private var lastSpotError = ""
     private var lastTimedFrequency: Int64?
     private var pendingTelemetryTiming: TelemetryTiming?
+    private var lastRotatorAzimuth: Double?
+    private var lastRotatorMovementAt = Date.distantPast
+    private var lastAutomaticRotatorCommand: (bearing: Double, date: Date)?
 
     private struct TelemetryTiming {
         let frequencyHz: Int64
@@ -73,6 +89,36 @@ final class AppModel: ObservableObject {
                 catPort: 15_002,
                 rigCtlPort: 14_532
             )
+        }
+        if configuration.rotator.host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           let imported = RotatorConfiguration.importedRotorConfiguration() {
+            configuration.rotator = imported
+        }
+    }
+
+    var rotatorHomeCoordinate: GeoCoordinate? {
+        MaidenheadLocator.coordinate(from: configuration.rotator.homeGrid)
+    }
+
+    var currentBand: String {
+        if let band = remoteStationStatus?.band, !band.isEmpty, band != "--" { return Self.normalizedBand(band) }
+        guard let frequency = radioSnapshot?.frequencyHz else { return "Other" }
+        switch frequency {
+        case 1_800_000..<2_100_000: return "160m"
+        case 3_400_000..<4_100_000: return "80m"
+        case 5_000_000..<5_500_000: return "60m"
+        case 6_900_000..<7_400_000: return "40m"
+        case 10_000_000..<10_200_000: return "30m"
+        case 13_900_000..<14_500_000: return "20m"
+        case 18_000_000..<18_300_000: return "17m"
+        case 20_900_000..<21_600_000: return "15m"
+        case 24_800_000..<25_100_000: return "12m"
+        case 27_900_000..<30_000_000: return "10m"
+        case 49_000_000..<55_000_000: return "6m"
+        case 69_000_000..<71_000_000: return "4m"
+        case 143_000_000..<149_000_000: return "2m"
+        case 420_000_000..<451_000_000: return "70cm"
+        default: return "Other"
         }
     }
 
@@ -334,6 +380,7 @@ final class AppModel: ObservableObject {
             if configuration.spotBridge.enabled {
                 try startSpotBridge(radio: selectedRadio)
             }
+            startRotatorIfNeeded()
         } catch {
             let message = error.localizedDescription
             stop()
@@ -348,6 +395,7 @@ final class AppModel: ObservableObject {
         rigCtlServer?.stop()
         logbookSpotReceiver?.stop()
         contestSpotReceiver?.stop()
+        stopRotator()
         catServer = nil
         rigCtlServer = nil
         logbookSpotReceiver = nil
@@ -447,6 +495,163 @@ final class AppModel: ObservableObject {
         } catch {
             spotBridgeStatus = "Listener error"
             record("Spots: \(error.localizedDescription)")
+        }
+    }
+
+    func startRotatorIfNeeded() {
+        guard configuration.rotator.enabled, configuration.rotator.connectAtLaunch else { return }
+        startRotator()
+    }
+
+    func startRotator() {
+        guard rotatorClient == nil else { return }
+        let settings = configuration.rotator
+        guard settings.enabled else {
+            rotatorStatus = "Disabled in Rotator settings"
+            return
+        }
+        let host = settings.host.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !host.isEmpty else {
+            rotatorConnectionState = .failed
+            rotatorStatus = "Enter the rotator TCP host"
+            return
+        }
+
+        let client = DCU1RotatorClient(
+            host: host,
+            port: settings.port,
+            pollMilliseconds: settings.pollIntervalMilliseconds,
+            onState: { [weak self] state, detail in
+                Task { @MainActor in
+                    self?.rotatorConnectionState = state
+                    self?.rotatorStatus = detail
+                    if state != .connected { self?.rotatorIsMoving = false }
+                }
+            },
+            onAzimuth: { [weak self] azimuth in
+                Task { @MainActor in self?.applyRotatorAzimuth(azimuth) }
+            }
+        )
+        rotatorClient = client
+        startRotatorFeed(port: settings.rumlogPort)
+        client.start()
+        record("Rotator: connecting to \(host):\(settings.port)")
+    }
+
+    func stopRotator() {
+        rotatorFeedReceiver?.stop()
+        rotatorFeedReceiver = nil
+        rotatorClient?.stop()
+        rotatorClient = nil
+        rotatorConnectionState = .stopped
+        rotatorStatus = "Disconnected"
+        rotatorFeedStatus = "RUMlog feed stopped"
+        rotatorIsMoving = false
+    }
+
+    func saveRotatorSettingsAndReconnect() {
+        save()
+        stopRotator()
+        guard configuration.rotator.enabled else { return }
+        startRotator()
+    }
+
+    func resolveRotatorTarget() {
+        let input = rotatorTargetInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !input.isEmpty else {
+            rotatorTargetSource = "Enter a bearing, grid, or call"
+            return
+        }
+        if let bearing = Double(input.replacingOccurrences(of: "°", with: "")), bearing.isFinite, (0...360).contains(bearing) {
+            setRotatorTarget(bearing: bearing, label: "Manual", source: "Direct bearing", coordinate: nil)
+            return
+        }
+        if let coordinate = MaidenheadLocator.coordinate(from: input), let home = rotatorHomeCoordinate {
+            let bearing = RotatorGeometry.initialBearing(from: home, to: coordinate)
+            setRotatorTarget(bearing: bearing, label: input.uppercased(), source: "Maidenhead grid", coordinate: coordinate)
+            return
+        }
+        let call = input.uppercased()
+        let path = NSString(string: configuration.rotator.callsignDatabasePath).expandingTildeInPath
+        guard let contents = try? String(contentsOfFile: path, encoding: .utf8),
+              let grid = contents.split(whereSeparator: \.isNewline).reversed().compactMap({ line -> String? in
+                  let parts = line.split(separator: ",", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                  guard parts.count == 2, parts[0].uppercased() == call else { return nil }
+                  return parts[1]
+              }).first,
+              let coordinate = MaidenheadLocator.coordinate(from: grid),
+              let home = rotatorHomeCoordinate else {
+            rotatorTargetLabel = call
+            rotatorTargetSource = "Call not found in the configured grid database"
+            rotatorTargetBearing = nil
+            rotatorTargetCoordinate = nil
+            rotatorTargetDistanceKilometers = nil
+            return
+        }
+        let bearing = RotatorGeometry.initialBearing(from: home, to: coordinate)
+        setRotatorTarget(bearing: bearing, label: call, source: "Call grid \(grid.uppercased())", coordinate: coordinate)
+    }
+
+    func turnRotatorToTarget() {
+        guard let client = rotatorClient, let bearing = rotatorTargetBearing else {
+            rotatorStatus = "Resolve a target and connect first"
+            return
+        }
+        Task { [weak self] in
+            do {
+                try await client.turn(to: bearing)
+                await MainActor.run {
+                    self?.rotatorStatus = "Turning to \(Int(bearing.rounded()))°"
+                    self?.record("Rotator: turn to \(Int(bearing.rounded()))°")
+                }
+            } catch {
+                await MainActor.run {
+                    self?.rotatorStatus = "Turn failed: \(error.localizedDescription)"
+                    self?.record("Rotator: turn failed — \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    func toggleRotatorPath() {
+        guard let bearing = rotatorTargetBearing else { return }
+        rotatorTargetBearing = RotatorGeometry.normalized(bearing + 180)
+        rotatorTargetSource = rotatorTargetSource.localizedCaseInsensitiveContains("long path")
+            ? rotatorTargetSource.replacingOccurrences(of: " · long path", with: "", options: .caseInsensitive)
+            : rotatorTargetSource + " · long path"
+        if let home = rotatorHomeCoordinate {
+            rotatorTargetCoordinate = RotatorGeometry.destination(from: home, bearing: rotatorTargetBearing ?? bearing, distanceKilometers: 5_000)
+        }
+    }
+
+    func rotateRotator(clockwise: Bool) {
+        guard let client = rotatorClient else { return }
+        Task { [weak self] in
+            do {
+                try await client.rotate(clockwise: clockwise)
+                await MainActor.run {
+                    self?.rotatorStatus = clockwise ? "Rotating clockwise" : "Rotating counter-clockwise"
+                    self?.record(clockwise ? "Rotator: clockwise" : "Rotator: counter-clockwise")
+                }
+            } catch {
+                await MainActor.run { self?.rotatorStatus = "Rotate failed: \(error.localizedDescription)" }
+            }
+        }
+    }
+
+    func stopRotatorMotion() {
+        guard let client = rotatorClient else { return }
+        Task { [weak self] in
+            do {
+                try await client.stopRotation()
+                await MainActor.run {
+                    self?.rotatorIsMoving = false
+                    self?.rotatorStatus = "Stop command sent"
+                    self?.record("Rotator: stop")
+                }
+            } catch {
+                await MainActor.run { self?.rotatorStatus = "Stop failed: \(error.localizedDescription)" }
+            }
         }
     }
 
@@ -656,6 +861,123 @@ final class AppModel: ObservableObject {
             spotCapabilityWarningShown = false
             spotBridgeStatus = "Listening — ready"
         }
+    }
+
+    private func startRotatorFeed(port: UInt16) {
+        let receiver = UDPSpotReceiver(
+            label: "com.oliverbross.OM0RXXCat.rotator.rumlog",
+            onDatagram: { [weak self] data in
+                Task { @MainActor in self?.handleRotatorDatagram(data) }
+            },
+            onEvent: { [weak self] event in
+                Task { @MainActor in self?.rotatorFeedStatus = event }
+            }
+        )
+        do {
+            try receiver.start(port: port)
+            rotatorFeedReceiver = receiver
+            rotatorFeedStatus = "Listening on UDP \(port)"
+        } catch {
+            rotatorFeedStatus = "UDP \(port) unavailable — close the old Rotor app"
+            record("Rotator: RUMlog feed unavailable — \(error.localizedDescription)")
+        }
+    }
+
+    private func handleRotatorDatagram(_ data: Data) {
+        do {
+            let update = try RUMlogRotatorParser.parse(data)
+            let home = rotatorHomeCoordinate
+            let gridCoordinate = MaidenheadLocator.coordinate(from: update.grid)
+            let computed = home.flatMap { origin in gridCoordinate.map { RotatorGeometry.initialBearing(from: origin, to: $0) } }
+            let selected: Double?
+            let source: String
+            if let command = update.commandedBearing {
+                selected = command
+                source = "RUMlog command"
+            } else if configuration.rotator.automaticSource == .station {
+                selected = update.stationBearing ?? computed ?? update.countryBearing
+                source = update.stationBearing != nil || computed != nil ? "RUMlog station" : "RUMlog DXCC fallback"
+            } else {
+                selected = update.countryBearing ?? update.stationBearing ?? computed
+                source = update.countryBearing != nil ? "RUMlog DXCC" : "RUMlog station fallback"
+            }
+            guard let selected else { return }
+            let band = Self.normalizedBand(update.band.isEmpty ? currentBand : update.band)
+            let ruledBearing = applyRotatorBandRules(selected, band: band)
+            let label = update.callsign.isEmpty ? configuration.rotator.automaticSource.rawValue : update.callsign
+            setRotatorTarget(bearing: ruledBearing, label: label, source: source, coordinate: gridCoordinate)
+            rotatorFeedStatus = "RUMlog: \(label) · \(Int(ruledBearing.rounded()))°"
+
+            if update.commandedBearing != nil {
+                turnRotatorToTarget()
+            } else if configuration.rotator.automaticTurningEnabled,
+                      configuration.rotator.enabledBands.contains(band) {
+                commandAutomaticTurnIfNeeded(to: ruledBearing)
+            }
+        } catch {
+            rotatorFeedStatus = "Ignored unsupported RUMlog datagram"
+        }
+    }
+
+    private func setRotatorTarget(bearing: Double, label: String, source: String, coordinate: GeoCoordinate?) {
+        let normalized = RotatorGeometry.normalized(bearing)
+        rotatorTargetBearing = normalized
+        rotatorTargetLabel = label
+        rotatorTargetSource = source
+        rotatorTargetCoordinate = coordinate
+        if let home = rotatorHomeCoordinate {
+            rotatorTargetDistanceKilometers = coordinate.map { RotatorGeometry.distanceKilometers(from: home, to: $0) }
+            if coordinate == nil {
+                rotatorTargetCoordinate = RotatorGeometry.destination(from: home, bearing: normalized, distanceKilometers: 5_000)
+            }
+        } else {
+            rotatorTargetDistanceKilometers = nil
+        }
+    }
+
+    private func applyRotatorBandRules(_ bearing: Double, band: String) -> Double {
+        let offset = Double(configuration.rotator.bandOffsets[band] ?? 0)
+        let primary = RotatorGeometry.normalized(bearing + offset)
+        guard configuration.rotator.bidirectionalBands.contains(band), let current = rotatorAzimuth else { return primary }
+        let opposite = RotatorGeometry.normalized(primary + 180)
+        return abs(RotatorGeometry.shortestDifference(from: current, to: opposite))
+            < abs(RotatorGeometry.shortestDifference(from: current, to: primary)) ? opposite : primary
+    }
+
+    private func commandAutomaticTurnIfNeeded(to bearing: Double) {
+        guard let current = rotatorAzimuth else { return }
+        let difference = abs(RotatorGeometry.shortestDifference(from: current, to: bearing))
+        guard difference >= Double(configuration.rotator.minimumAutomaticTurnDegrees) else { return }
+        if let previous = lastAutomaticRotatorCommand,
+           abs(RotatorGeometry.shortestDifference(from: previous.bearing, to: bearing)) < 0.5,
+           Date().timeIntervalSince(previous.date) < 30 { return }
+        lastAutomaticRotatorCommand = (bearing, Date())
+        turnRotatorToTarget()
+    }
+
+    private func applyRotatorAzimuth(_ azimuth: Double) {
+        let now = Date()
+        if let previous = lastRotatorAzimuth,
+           abs(RotatorGeometry.shortestDifference(from: previous, to: azimuth)) >= 0.2 {
+            lastRotatorMovementAt = now
+            rotatorIsMoving = true
+        }
+        lastRotatorAzimuth = azimuth
+        rotatorAzimuth = RotatorGeometry.normalized(azimuth)
+        let movementStamp = lastRotatorMovementAt
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            guard let self, self.lastRotatorMovementAt == movementStamp else { return }
+            self.rotatorIsMoving = false
+        }
+    }
+
+    private static func normalizedBand(_ raw: String) -> String {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if RotatorConfiguration.supportedBands.map({ $0.lowercased() }).contains(value) {
+            return RotatorConfiguration.supportedBands.first { $0.lowercased() == value } ?? "Other"
+        }
+        if value.allSatisfy(\.isNumber) { return "\(value)m" }
+        return value.isEmpty ? "Other" : raw
     }
 
     private func loadRemoteConfiguration(using client: RemoteAgentClient) async {

@@ -295,6 +295,7 @@ public final class UDPSpotReceiver: @unchecked Sendable {
     private let onDatagram: DatagramHandler
     private let onEvent: EventHandler
     private var listener: NWListener?
+    private var connections: [NWConnection] = []
 
     public init(label: String, onDatagram: @escaping DatagramHandler, onEvent: @escaping EventHandler = { _ in }) {
         queue = DispatchQueue(label: label)
@@ -324,6 +325,7 @@ public final class UDPSpotReceiver: @unchecked Sendable {
         }
         newListener.newConnectionHandler = { [weak self] connection in
             guard let self else { return }
+            self.connections.append(connection)
             connection.start(queue: self.queue)
             self.receive(on: connection)
         }
@@ -339,13 +341,23 @@ public final class UDPSpotReceiver: @unchecked Sendable {
     public func stop() {
         listener?.cancel()
         listener = nil
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.connections.forEach { $0.cancel() }
+            self.connections.removeAll()
+        }
     }
 
     private func receive(on connection: NWConnection) {
         connection.receiveMessage { [weak self] data, _, _, error in
             guard let self else { return }
             if let data, !data.isEmpty { self.onDatagram(data) }
-            if error == nil { self.receive(on: connection) }
+            if error == nil {
+                self.receive(on: connection)
+            } else {
+                self.connections.removeAll { $0 === connection }
+                connection.cancel()
+            }
         }
     }
 }
