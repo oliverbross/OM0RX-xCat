@@ -41,6 +41,12 @@ already knows the selected callsign and, when available, the station grid. A
 click on RUMlog's rotor needle is treated as an explicit turn request. Automatic
 turning uses the configured DXCC or Station source and only the selected bands.
 
+If RUMlog resolves a callsign but OM0RX-xCat remains on the previous target,
+open RUMlog **Settings > UDP** and cycle **App info (N1MM, RUMlog)** off and on.
+This restarts RUMlog's UDP broadcaster without changing the configured
+`127.0.0.1:12064` destination. The Rotator tab confirms recovery by replacing
+`Listening on 127.0.0.1:12064` with the received callsign and bearing.
+
 ## Bearing accuracy
 
 The home position uses the centre of the configured 4, 6, 8, or 10-character
@@ -65,8 +71,9 @@ The detached monitor remains a normal movable macOS window and restores its
 screen position. The compass has one full needle: the cyan physical-antenna
 readback. It smoothly interpolates the 100 ms samples by the shortest path across
 0°/360°, while the current numeric heading and CW/CCW state continue to follow
-the controller readback. The selected target is a small purple rim marker and a
-separate numeric bearing, so it cannot be mistaken for a second antenna.
+the controller readback. The selected target stays outside the compass as a
+separate numeric bearing and map marker, so it cannot be mistaken for a second
+antenna.
 
 Click anywhere inside the compass to set that bearing and send a DCU-1 turn
 command. The map follows each geographic target and zooms to its country or

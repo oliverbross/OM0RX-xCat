@@ -228,7 +228,6 @@ struct RotatorMonitorPanel: View {
 
             RotatorCompass(
                 azimuth: model.rotatorAzimuth,
-                target: model.rotatorTargetBearing,
                 beamWidth: Double(model.configuration.rotator.beamWidthDegrees),
                 isMoving: model.rotatorIsMoving,
                 motionDirection: model.rotatorMotionDirection,
@@ -320,14 +319,12 @@ struct RotatorMonitorPanel: View {
 
 private struct RotatorCompass: View {
     let azimuth: Double?
-    let target: Double?
     let beamWidth: Double
     let isMoving: Bool
     let motionDirection: String
     let onTurn: (Double) -> Void
 
     private let cyan = Color(red: 0.40, green: 0.91, blue: 0.98)
-    private let magenta = Color(red: 0.75, green: 0.35, blue: 0.95)
 
     var body: some View {
         GeometryReader { geometry in
@@ -366,9 +363,6 @@ private struct RotatorCompass: View {
                         .font(.system(size: 24, weight: .bold, design: .rounded))
                         .foregroundStyle(.secondary)
                 }
-                if let target {
-                    targetMarker(target, side: side)
-                }
                 Circle().fill(isMoving ? Color.orange : cyan).frame(width: 9, height: 9)
                     .shadow(color: (isMoving ? Color.orange : cyan).opacity(0.8), radius: 5)
             }
@@ -393,18 +387,6 @@ private struct RotatorCompass: View {
         .accessibilityValue(azimuth.map { "\(Int($0.rounded())) degrees" } ?? "Unavailable")
         .accessibilityHint("Click a bearing on the compass to turn the antenna")
         .help("Click anywhere on the compass to turn ARCO to that bearing")
-    }
-
-    private func targetMarker(_ bearing: Double, side: CGFloat) -> some View {
-        VStack(spacing: 1) {
-            Circle().fill(magenta).frame(width: 7, height: 7)
-            Text("T")
-                .font(.system(size: 7, weight: .bold, design: .rounded))
-                .foregroundStyle(magenta)
-        }
-        .offset(y: -side / 2 + 16)
-        .rotationEffect(.degrees(bearing))
-        .shadow(color: magenta.opacity(0.65), radius: 3)
     }
 
     private func cardinal(_ text: String, angle: Double, side: CGFloat) -> some View {

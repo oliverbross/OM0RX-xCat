@@ -52,6 +52,48 @@ struct RemoteAgentTests {
         #expect(commandRequests.count == 1)
     }
 
+    @Test func keepsSuccessfulCATFrequencyWriteStableUntilFreshStateArrives() async throws {
+        RemoteAgentURLProtocol.recorder.reset(stateData: Data(Self.safeState.utf8))
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RemoteAgentURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let client = try RemoteAgentClient(
+            baseURL: "https://station.invalid",
+            token: "test-credential",
+            session: session
+        )
+
+        await client.start()
+        #expect(await waitForStateRequestCount(1))
+        try await client.setPrimaryFrequency(14_195_000)
+        #expect(await client.primaryFrequency() == 14_195_000)
+        #expect(await client.snapshot().frequencyHz == 14_195_000)
+        await client.stop()
+        session.invalidateAndCancel()
+    }
+
+    @Test func pendingCATWriteMasksOlderStateThenYieldsToConfirmationOrExpiry() {
+        let now = Date(timeIntervalSince1970: 1_760_000_000)
+        var pending = PendingRadioWrites(lifetime: 10)
+        pending.expectFrequency(14_195_000, vfo: "A", now: now)
+        pending.expectMode("USB", vfo: "A", now: now)
+
+        var stale = RadioSnapshot(frequencyHz: 14_074_000, mode: "DIGU")
+        pending.reconcile(&stale, now: now.addingTimeInterval(1))
+        #expect(stale.frequencyHz == 14_195_000)
+        #expect(stale.mode == "USB")
+
+        var confirmed = RadioSnapshot(frequencyHz: 14_195_000, mode: "USB")
+        pending.reconcile(&confirmed, now: now.addingTimeInterval(2))
+        #expect(confirmed.frequencyHz == 14_195_000)
+        #expect(confirmed.mode == "USB")
+
+        pending.expectFrequency(7_100_000, vfo: "A", now: now)
+        var later = RadioSnapshot(frequencyHz: 14_200_000, mode: "USB")
+        pending.reconcile(&later, now: now.addingTimeInterval(11))
+        #expect(later.frequencyHz == 14_200_000)
+    }
+
     @Test func decodesAuthoritativeTwoVFOAndStationState() throws {
         let receivedAt = Date(timeIntervalSince1970: 1_760_000_000.75)
         let decoded = try RemoteAgentStateDecoder.stateResponse(Data(Self.safeState.utf8), receivedAt: receivedAt)

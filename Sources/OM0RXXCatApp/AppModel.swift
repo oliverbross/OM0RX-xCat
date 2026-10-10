@@ -996,13 +996,10 @@ final class AppModel: ObservableObject {
 
         if let target = activeRotatorTarget {
             let remaining = abs(RotatorGeometry.shortestDifference(from: normalized, to: target))
-            if remaining <= 1.0 {
-                activeRotatorTarget = nil
-                rotatorIsMoving = false
-                rotatorMotionDirection = ""
-                rotatorStatus = "At target \(Self.degreesText(normalized))"
-            } else if rotatorIsMoving {
-                rotatorStatus = turningStatus(current: normalized, target: target)
+            if rotatorIsMoving {
+                rotatorStatus = remaining <= 1.0
+                    ? "Settling at \(Self.degreesText(target))"
+                    : turningStatus(current: normalized, target: target)
             }
         }
         if rotatorIsMoving {
@@ -1026,9 +1023,14 @@ final class AppModel: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self, self.lastRotatorMovementAt == movementStamp else { return }
             if let target = self.activeRotatorTarget,
-               let current = self.rotatorAzimuth,
-               abs(RotatorGeometry.shortestDifference(from: current, to: target)) > 1.0 {
-                self.rotatorStatus = "Holding at \(Self.degreesText(current)) · target \(Self.degreesText(target))"
+               let current = self.rotatorAzimuth {
+                let remaining = abs(RotatorGeometry.shortestDifference(from: current, to: target))
+                if remaining <= 2.0 {
+                    self.rotatorStatus = "At target \(Self.degreesText(current))"
+                    self.activeRotatorTarget = nil
+                } else {
+                    self.rotatorStatus = "Holding at \(Self.degreesText(current)) · target \(Self.degreesText(target))"
+                }
             }
             self.rotatorIsMoving = false
             self.rotatorMotionDirection = ""

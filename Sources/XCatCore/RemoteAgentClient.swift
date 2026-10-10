@@ -1,5 +1,64 @@
 import Foundation
 
+struct PendingRadioWrites: Sendable {
+    private struct Value<T: Equatable & Sendable>: Sendable {
+        let value: T
+        let expiresAt: Date
+    }
+
+    private var frequencies: [String: Value<Int64>] = [:]
+    private var modes: [String: Value<String>] = [:]
+    private let lifetime: TimeInterval
+
+    init(lifetime: TimeInterval = 10) {
+        self.lifetime = lifetime
+    }
+
+    mutating func expectFrequency(_ frequencyHz: Int64, vfo: String, now: Date = Date()) {
+        frequencies[vfo.uppercased()] = Value(value: frequencyHz, expiresAt: now.addingTimeInterval(lifetime))
+    }
+
+    mutating func expectMode(_ mode: String, vfo: String, now: Date = Date()) {
+        modes[vfo.uppercased()] = Value(value: mode.uppercased(), expiresAt: now.addingTimeInterval(lifetime))
+    }
+
+    mutating func reconcile(_ snapshot: inout RadioSnapshot, now: Date = Date()) {
+        var completedFrequencies: [String] = []
+        for (letter, pending) in frequencies {
+            guard let index = snapshot.vfos.firstIndex(where: { $0.letter == letter }) else {
+                if now >= pending.expiresAt { completedFrequencies.append(letter) }
+                continue
+            }
+            if snapshot.vfos[index].frequencyHz == pending.value {
+                completedFrequencies.append(letter)
+            } else if now < pending.expiresAt {
+                snapshot.vfos[index].frequencyHz = pending.value
+                if snapshot.slice == letter { snapshot.frequencyHz = pending.value }
+            } else {
+                completedFrequencies.append(letter)
+            }
+        }
+        completedFrequencies.forEach { frequencies.removeValue(forKey: $0) }
+
+        var completedModes: [String] = []
+        for (letter, pending) in modes {
+            guard let index = snapshot.vfos.firstIndex(where: { $0.letter == letter }) else {
+                if now >= pending.expiresAt { completedModes.append(letter) }
+                continue
+            }
+            if snapshot.vfos[index].mode.uppercased() == pending.value {
+                completedModes.append(letter)
+            } else if now < pending.expiresAt {
+                snapshot.vfos[index].mode = pending.value
+                if snapshot.slice == letter { snapshot.mode = pending.value }
+            } else {
+                completedModes.append(letter)
+            }
+        }
+        completedModes.forEach { modes.removeValue(forKey: $0) }
+    }
+}
+
 public actor RemoteAgentClient: RadioControlling {
     public typealias StateHandler = @Sendable (RadioConnectionState, String) -> Void
     public typealias SnapshotHandler = @Sendable (RadioSnapshot) -> Void
@@ -24,6 +83,7 @@ public actor RemoteAgentClient: RadioControlling {
     private var watchdogTask: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
     private var lastStreamMessage = Date.distantPast
+    private var pendingWrites = PendingRadioWrites()
 
     public init(
         baseURL: String,
@@ -94,22 +154,32 @@ public actor RemoteAgentClient: RadioControlling {
     public func setPrimaryFrequency(_ frequencyHz: Int64) async throws {
         guard frequencyHz > 0 else { throw XCatError.invalidFrequency }
         try await execute(.frequency(frequencyHz, vfo: "A"))
+        pendingWrites.expectFrequency(frequencyHz, vfo: "A")
+        publishPendingWrites()
     }
 
     public func setFrequency(_ frequencyHz: Int64) async throws {
         guard frequencyHz > 0 else { throw XCatError.invalidFrequency }
-        try await execute(.frequency(frequencyHz, vfo: receiveVFO()))
+        let vfo = receiveVFO()
+        try await execute(.frequency(frequencyHz, vfo: vfo))
+        pendingWrites.expectFrequency(frequencyHz, vfo: vfo)
+        publishPendingWrites()
     }
 
     public func setSecondaryFrequency(_ frequencyHz: Int64) async throws {
         guard frequencyHz > 0 else { throw XCatError.invalidFrequency }
         try await execute(.frequency(frequencyHz, vfo: "B"))
+        pendingWrites.expectFrequency(frequencyHz, vfo: "B")
+        publishPendingWrites()
     }
 
     public func setMode(_ mode: String) async throws {
         let normalized = mode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         guard !normalized.isEmpty else { throw XCatError.invalidMode }
-        try await execute(.mode(normalized, vfo: receiveVFO()))
+        let vfo = receiveVFO()
+        try await execute(.mode(normalized, vfo: vfo))
+        pendingWrites.expectMode(normalized, vfo: vfo)
+        publishPendingWrites()
     }
 
     public func setTransmit(_ enabled: Bool) async throws {
@@ -315,8 +385,17 @@ public actor RemoteAgentClient: RadioControlling {
     }
 
     private func apply(_ decoded: RemoteAgentDecodedState) {
-        value = decoded.snapshot
+        var snapshot = decoded.snapshot
+        pendingWrites.reconcile(&snapshot)
+        value = snapshot
         wordsPerMinute = decoded.cwSpeed
+        onSnapshot(value)
+    }
+
+    private func publishPendingWrites() {
+        var snapshot = value
+        pendingWrites.reconcile(&snapshot)
+        value = snapshot
         onSnapshot(value)
     }
 

@@ -38,7 +38,7 @@ struct CATCommandProcessorTests {
         let processor = CATCommandProcessor(radio: radio)
 
         #expect(await processor.handle("KS") == "KS025;")
-        #expect(await processor.handle("FB") == "?;")
+        #expect(await processor.handle("FB") == "FB00014022300;")
         #expect(await processor.handle("FA") == "FA00014022300;")
         #expect(await processor.handle("AI2") == nil)
         #expect(await processor.handle("AI") == "AI2;")

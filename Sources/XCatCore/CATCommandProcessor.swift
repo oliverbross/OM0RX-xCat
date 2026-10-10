@@ -25,7 +25,9 @@ public actor CATCommandProcessor {
             guard snapshot.isConnected, let frequency = await radio.primaryFrequency() else { return "?;" }
             return Self.frequencyResponse(prefix: "FA", hertz: frequency)
         case "FB":
-            guard snapshot.isConnected, let frequency = await radio.secondaryFrequency() else { return "?;" }
+            let secondary = await radio.secondaryFrequency()
+            let primary = await radio.primaryFrequency()
+            guard snapshot.isConnected, let frequency = secondary ?? primary else { return "?;" }
             return Self.frequencyResponse(prefix: "FB", hertz: frequency)
         case "FR":
             guard snapshot.isConnected else { return "?;" }
