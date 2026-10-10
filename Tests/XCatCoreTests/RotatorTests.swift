@@ -31,6 +31,14 @@ import Testing
     #expect(RotatorGeometry.bearingForDialPoint(x: 201, y: 100, centerX: 100, centerY: 100, radius: 100) == nil)
 }
 
+@Test func automaticTurnDeadbandIgnoresAtTargetJitter() {
+    #expect(!RotatorGeometry.shouldAutomaticallyTurn(from: 250, to: 249, minimumChange: 0))
+    #expect(!RotatorGeometry.shouldAutomaticallyTurn(from: 359.5, to: 0.5, minimumChange: 0))
+    #expect(RotatorGeometry.shouldAutomaticallyTurn(from: 250, to: 248.9, minimumChange: 0))
+    #expect(!RotatorGeometry.shouldAutomaticallyTurn(from: 250, to: 256, minimumChange: 10))
+    #expect(RotatorGeometry.shouldAutomaticallyTurn(from: 250, to: 261, minimumChange: 10))
+}
+
 @Test func dcu1ProtocolCommandsAndResponses() {
     #expect(DCU1Protocol.pollCommand == "AI1;")
     #expect(DCU1Protocol.stopCommand == ";")

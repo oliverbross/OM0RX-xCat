@@ -972,8 +972,11 @@ final class AppModel: ObservableObject {
 
     private func commandAutomaticTurnIfNeeded(to bearing: Double) {
         guard let current = rotatorAzimuth else { return }
-        let difference = abs(RotatorGeometry.shortestDifference(from: current, to: bearing))
-        guard difference >= Double(configuration.rotator.minimumAutomaticTurnDegrees) else { return }
+        guard RotatorGeometry.shouldAutomaticallyTurn(
+            from: current,
+            to: bearing,
+            minimumChange: Double(configuration.rotator.minimumAutomaticTurnDegrees)
+        ) else { return }
         if let previous = lastAutomaticRotatorCommand,
            abs(RotatorGeometry.shortestDifference(from: previous.bearing, to: bearing)) < 0.5,
            Date().timeIntervalSince(previous.date) < 30 { return }

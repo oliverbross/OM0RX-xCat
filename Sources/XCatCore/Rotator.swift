@@ -252,6 +252,11 @@ public enum RotatorGeometry {
         return difference
     }
 
+    public static func shouldAutomaticallyTurn(from current: Double, to target: Double, minimumChange: Double) -> Bool {
+        let deadband = max(1.0, minimumChange)
+        return abs(shortestDifference(from: current, to: target)) > deadband
+    }
+
     public static func normalized(_ bearing: Double) -> Double {
         let value = bearing.truncatingRemainder(dividingBy: 360)
         return value < 0 ? value + 360 : value

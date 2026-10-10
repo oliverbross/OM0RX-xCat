@@ -40,6 +40,10 @@ RUMlog remains the best source for active-station and DXCC direction because it
 already knows the selected callsign and, when available, the station grid. A
 click on RUMlog's rotor needle is treated as an explicit turn request. Automatic
 turning uses the configured DXCC or Station source and only the selected bands.
+The controller applies a one-degree physical deadband even when the configured
+minimum change is zero. This prevents repeated RUMlog updates for the same
+callsign from commanding an already-settled rotor without delaying a real
+target change.
 
 If RUMlog resolves a callsign but OM0RX-xCat remains on the previous target,
 open RUMlog **Settings > UDP** and cycle **App info (N1MM, RUMlog)** off and on.
