@@ -41,6 +41,11 @@ The current source tree builds version 0.3.0 with Remote Station Agent support.
 Build 4 adds an explicit **Reconnect Agent** action in both the main window and
 menu-bar panel. Reconnect refreshes the authenticated HTTPS/WebSocket session
 without using the application Stop path or sending station-control commands.
+Build 5 removes the Mac-side commissioning/alarm command latch. When **Enable
+full CAT and station control** is selected, xCat forwards every command that the
+agent advertises and presents commissioning, route, and alarm information as
+operator advisories. The Windows agent remains the authoritative hardware and
+station-policy endpoint.
 The published v0.2.0 release predates that transport.
 
 On first use:
@@ -51,8 +56,8 @@ On first use:
 3. Optionally enter the preferred FlexRadio serial. Once selected, the app
    saves that serial and will not silently connect to a different radio.
 4. Enter the exact active SmartSDR station name, such as `Maestro`.
-5. Leave **Allow CAT transmit and CW commands** off until receive operation is
-   verified, then click **Save Settings** and **Start**.
+5. Enable **Full CAT and station control** when the Windows station is ready,
+   then click **Save Settings** and **Start**.
 
 Later launches use an account-scoped refresh token stored in macOS Keychain.
 Use **Forget Saved Session** to sign out. The remote radio's self-signed TLS
@@ -110,11 +115,10 @@ only through hole punching are outside v0.2.0's verified scope.
 
 In Remote Station Agent mode every frequency/mode route change, receive/transmit
 VFO selection, split change, PTT/tune, XIT, CWX, and RF-power write goes only to
-the agent. OM0RX-xCat does not also write to SmartLink. Hazardous writes fail
-closed when the radio is disconnected, unknown, stale, or unbound; when the
-station is uncommissioned; or when the state contains blockers or active alarms.
-PTT-off, CW clear, standby, and cancel remain recovery operations, subject to the
-agent's advertised capabilities and allowed actions.
+the agent. OM0RX-xCat does not also write to SmartLink. The Mac does not impose
+a second commissioning or alarm latch: with full control enabled it forwards
+the agent's advertised command surface, while retaining status and alarm text
+as operator advisories. The Windows agent is responsible for hardware policy.
 
 ## Build and test
 

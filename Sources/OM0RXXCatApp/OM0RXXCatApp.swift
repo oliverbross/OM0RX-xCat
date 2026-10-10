@@ -35,6 +35,7 @@ struct OM0RXXCatApp: App {
                 }
         }
         .windowResizability(.contentMinSize)
+        .defaultSize(width: 900, height: 620)
 
         MenuBarExtra {
             MenuBarView()

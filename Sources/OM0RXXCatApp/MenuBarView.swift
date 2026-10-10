@@ -18,8 +18,8 @@ struct MenuBarView: View {
                 Text("\(station.kpaSummary) · \(station.katSummary)")
                 Text("\(station.routeSummary) · \(station.alarmSummary)")
                 if !station.inhibitors.isEmpty {
-                    Text("Locked: \(station.inhibitors.joined(separator: "; "))")
-                        .foregroundStyle(.orange)
+                    Text("Advisory: \(station.inhibitors.joined(separator: "; "))")
+                        .foregroundStyle(.secondary)
                         .lineLimit(4)
                 }
                 HStack {

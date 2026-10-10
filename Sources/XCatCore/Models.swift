@@ -99,11 +99,6 @@ public struct RemoteStationStatus: Equatable, Sendable {
         self.alarmMessages = alarmMessages
     }
 
-    public var hazardousWritesAllowed: Bool { inhibitors.isEmpty }
-
-    public func allows(_ action: RemoteStationAction) -> Bool {
-        allowedActions.contains(action.rawValue)
-    }
 }
 
 public struct RadioSnapshot: Equatable, Sendable {

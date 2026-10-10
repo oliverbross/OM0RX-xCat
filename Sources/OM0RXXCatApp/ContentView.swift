@@ -3,168 +3,440 @@ import XCatCore
 
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
+    @State private var selectedTab: WorkspaceTab = .status
+
+    private enum WorkspaceTab: Hashable {
+        case status
+        case activity
+        case configuration
+    }
+
+    private enum Layout {
+        static let tight: CGFloat = 4
+        static let compact: CGFloat = 8
+        static let standard: CGFloat = 16
+        static let generous: CGFloat = 20
+        static let labelWidth: CGFloat = 154
+        static let compactFieldWidth: CGFloat = 96
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("OM0RX-xCat")
-                        .font(.largeTitle.bold())
-                    Text("Reliable FlexRadio CAT and RigCtlD bridge")
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Circle()
-                    .fill(model.isStationReady ? Color.green : (model.isRunning ? Color.orange : Color.secondary))
-                    .frame(width: 12, height: 12)
-                Text(model.status)
-                    .font(.headline)
-                    .multilineTextAlignment(.trailing)
-                    .monospacedDigit()
+        VStack(spacing: Layout.standard) {
+            header
+            Divider()
+            TabView(selection: $selectedTab) {
+                statusTab
+                    .tabItem { Label("Status", systemImage: "antenna.radiowaves.left.and.right") }
+                    .tag(WorkspaceTab.status)
+                activityTab
+                    .tabItem { Label("Activity", systemImage: "list.bullet.rectangle") }
+                    .tag(WorkspaceTab.activity)
+                configurationTab
+                    .tabItem { Label("Configuration", systemImage: "slider.horizontal.3") }
+                    .tag(WorkspaceTab.configuration)
             }
+        }
+        .padding(Layout.generous)
+        .frame(minWidth: 760, idealWidth: 900, maxWidth: 1_040, minHeight: 520, idealHeight: 620)
+    }
 
-            Form {
-                Picker("Radio connection", selection: $model.configuration.connectionKind) {
-                    ForEach(AppConfiguration.ConnectionKind.allCases, id: \.self) { kind in
-                        Text(kind.rawValue).tag(kind)
-                    }
-                }
-                if model.configuration.connectionKind == .local {
-                    TextField("Radio host", text: $model.configuration.radioHost)
-                }
-                if model.configuration.connectionKind == .legacyXCAT {
-                    HStack {
-                        TextField("xCAT host", text: $model.configuration.legacyXCATHost)
-                        TextField("xCAT CAT port", value: $model.configuration.legacyXCATPort, format: .number)
-                            .frame(width: 160)
-                    }
-                    Toggle("Restart xCAT automatically if it crashes", isOn: $model.configuration.superviseLegacyXCAT)
-                    Text("RUMlogNG → OM0RX-xCat → xCAT → SmartLink → FlexRadio")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                if model.configuration.connectionKind == .remoteAgent {
-                    TextField("Remote Agent HTTPS URL", text: $model.configuration.remoteAgentBaseURL)
-                        .textContentType(.URL)
-                    SecureField("Remote Agent bearer token", text: $model.remoteAgentToken)
-                        .textContentType(.password)
-                    Text("The bearer token is stored only in macOS Keychain. Agent mode never sends route, PTT, tune, CWX, or power writes directly to SmartLink.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Button("Forget Saved Agent Token") { model.forgetRemoteAgentToken() }
-                }
-                if model.configuration.connectionKind == .smartLink {
-                    TextField("SmartLink email", text: $model.configuration.smartLinkEmail)
-                        .textContentType(.username)
-                    SecureField("SmartLink password (needed once)", text: $model.smartLinkPassword)
-                        .textContentType(.password)
-                    TextField("Preferred radio serial (optional)", text: $model.configuration.smartLinkRadioSerial)
-                    Text("The password stays only in memory. SmartLink's refresh token and the radio certificate pin are protected by macOS Keychain.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    HStack {
-                        Button("Forget Saved Session") { model.forgetSmartLinkSession() }
-                        Button("Reset Radio Certificate Pin") { model.resetSmartLinkCertificatePin() }
-                    }
-                }
-                if model.configuration.connectionKind != .legacyXCAT,
-                   model.configuration.connectionKind != .remoteAgent {
-                    HStack {
-                        TextField("Station", text: $model.configuration.stationName)
-                        TextField("Slice", text: $model.configuration.sliceLetter)
-                            .frame(width: 80)
-                    }
-                }
-                HStack {
-                    TextField("CAT port", value: $model.configuration.catPort, format: .number)
-                    TextField("RigCtlD port", value: $model.configuration.rigCtlPort, format: .number)
-                }
-                Toggle("Allow CAT transmit and CW commands", isOn: $model.configuration.allowCATTransmit)
-                    .help("Leave this off until receive-only operation is verified. RX/unkey remains available.")
-                Text("Test safely on 15002/14532 while the original xCAT owns 5002/4532. Change the ports only when replacing it.")
+    private var header: some View {
+        HStack(spacing: Layout.standard) {
+            VStack(alignment: .leading, spacing: Layout.tight) {
+                Text("OM0RX-xCat")
+                    .font(.title2.bold())
+                Text("FlexRadio CAT and RigCtlD bridge")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Toggle("Start protocol servers automatically", isOn: $model.configuration.launchServersAutomatically)
             }
-            .formStyle(.grouped)
-            .disabled(model.isRunning)
+            .layoutPriority(1)
 
-            HStack {
-                Button("Save Settings") { model.save() }
-                    .disabled(model.isRunning)
-                Spacer()
-                if model.isRunning, model.configuration.connectionKind == .remoteAgent {
-                    Button("Reconnect Agent") { model.reconnectRemoteAgent() }
-                        .help("Re-establish HTTPS and WebSocket state without sending station commands")
+            Spacer(minLength: Layout.standard)
+
+            HStack(spacing: Layout.compact) {
+                Circle()
+                    .fill(connectionColor)
+                    .frame(width: 10, height: 10)
+                    .accessibilityHidden(true)
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text(connectionLabel)
+                        .font(.headline)
+                    Text(model.configuration.connectionKind.rawValue)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                Button(model.isRunning ? "Stop" : "Start") {
-                    model.isRunning ? model.stop() : model.start()
+                .accessibilityElement(children: .combine)
+            }
+
+            if model.isRunning, model.configuration.connectionKind == .remoteAgent {
+                Button("Reconnect") { model.reconnectRemoteAgent() }
+                    .help("Re-establish the Remote Agent HTTPS and WebSocket connection")
+            }
+            Button(model.isRunning ? "Stop" : "Start") {
+                model.isRunning ? model.stop() : model.start()
+            }
+            .keyboardShortcut(.defaultAction)
+        }
+        .controlSize(.small)
+    }
+
+    private var statusTab: some View {
+        VStack(alignment: .leading, spacing: Layout.standard) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: Layout.standard) {
+                    radioOverview
+                    equipmentOverview
                 }
-                .keyboardShortcut(.defaultAction)
+                VStack(alignment: .leading, spacing: Layout.standard) {
+                    radioOverview
+                    equipmentOverview
+                }
             }
 
             if model.configuration.connectionKind == .remoteAgent {
                 remoteStationControls
             }
-
-            GroupBox("Activity") {
-                ScrollView {
-                    Text(model.events.suffix(80).joined(separator: "\n"))
-                        .font(.system(.caption, design: .monospaced))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-                }
-                .frame(minHeight: 140)
-            }
+            Spacer(minLength: 0)
         }
-        .padding(22)
-        .frame(minWidth: 680, minHeight: 600)
+        .padding(.top, Layout.compact)
+    }
+
+    private var radioOverview: some View {
+        GroupBox("Radio") {
+            VStack(alignment: .leading, spacing: Layout.compact) {
+                Label(connectionLabel, systemImage: connectionSymbol)
+                    .foregroundStyle(connectionColor)
+                Text(model.status)
+                    .font(.system(.body, design: .monospaced))
+                    .monospacedDigit()
+                    .lineLimit(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(Layout.tight)
+            .frame(maxWidth: .infinity, minHeight: 94, alignment: .topLeading)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var equipmentOverview: some View {
+        GroupBox("Station path") {
+            VStack(alignment: .leading, spacing: Layout.compact) {
+                if let station = model.remoteStationStatus {
+                    Grid(alignment: .leading, horizontalSpacing: Layout.standard, verticalSpacing: Layout.tight) {
+                        statusRow("Amplifier", station.kpaSummary)
+                        statusRow("Tuner", station.katSummary)
+                        statusRow("Route", station.routeSummary)
+                        statusRow("Alarms", station.alarmSummary)
+                    }
+                } else {
+                    Text("Waiting for authoritative station state")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(Layout.tight)
+            .frame(maxWidth: .infinity, minHeight: 94, alignment: .topLeading)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private func statusRow(_ label: String, _ value: String) -> some View {
+        GridRow {
+            Text(label)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(.body, design: .monospaced))
+                .lineLimit(1)
+                .help(value)
+        }
     }
 
     private var remoteStationControls: some View {
-        GroupBox("Remote station") {
-            VStack(alignment: .leading, spacing: 10) {
-                if let station = model.remoteStationStatus {
-                    Text("\(station.kpaSummary) · \(station.katSummary) · \(station.routeSummary) · \(station.alarmSummary)")
-                        .font(.system(.caption, design: .monospaced))
-                    Text(station.hazardousWritesAllowed
-                         ? "Guarded writes available"
-                         : "TX/route locked: \(station.inhibitors.joined(separator: "; "))")
-                        .font(.caption)
-                        .foregroundStyle(station.hazardousWritesAllowed ? Color.secondary : Color.orange)
-                        .lineLimit(3)
-                } else {
-                    Text("Waiting for authoritative agent state")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+        GroupBox("Remote control") {
+            VStack(alignment: .leading, spacing: Layout.standard) {
+                HStack(spacing: Layout.compact) {
+                    Label(
+                        model.configuration.allowCATTransmit ? "Full control enabled" : "Full control disabled",
+                        systemImage: model.configuration.allowCATTransmit ? "checkmark.circle.fill" : "pause.circle"
+                    )
+                    .foregroundStyle(model.configuration.allowCATTransmit ? Color.green : Color.secondary)
+                    Spacer()
+                    if let station = model.remoteStationStatus, !station.inhibitors.isEmpty {
+                        Text("Agent advisory: \(station.inhibitors.joined(separator: "; "))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .help(station.inhibitors.joined(separator: "; "))
+                    }
                 }
 
-                HStack {
-                    Toggle("RIT", isOn: $model.remoteRITEnabled)
-                    TextField("Hz", value: $model.remoteRITOffsetHz, format: .number)
-                        .frame(width: 90)
-                    Button("Apply RIT") { model.applyRemoteRIT() }
-                    Toggle("XIT", isOn: $model.remoteXITEnabled)
-                    TextField("Hz", value: $model.remoteXITOffsetHz, format: .number)
-                        .frame(width: 90)
-                    Button("Apply XIT") { model.applyRemoteXIT() }
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .center, spacing: Layout.standard) {
+                        offsetControl(
+                            label: "RIT",
+                            isOn: $model.remoteRITEnabled,
+                            offset: $model.remoteRITOffsetHz,
+                            actionLabel: "Apply RIT",
+                            action: model.applyRemoteRIT
+                        )
+                        Divider().frame(height: 24)
+                        offsetControl(
+                            label: "XIT",
+                            isOn: $model.remoteXITEnabled,
+                            offset: $model.remoteXITOffsetHz,
+                            actionLabel: "Apply XIT",
+                            action: model.applyRemoteXIT
+                        )
+                    }
+                    VStack(alignment: .leading, spacing: Layout.compact) {
+                        offsetControl(
+                            label: "RIT",
+                            isOn: $model.remoteRITEnabled,
+                            offset: $model.remoteRITOffsetHz,
+                            actionLabel: "Apply RIT",
+                            action: model.applyRemoteRIT
+                        )
+                        offsetControl(
+                            label: "XIT",
+                            isOn: $model.remoteXITEnabled,
+                            offset: $model.remoteXITOffsetHz,
+                            actionLabel: "Apply XIT",
+                            action: model.applyRemoteXIT
+                        )
+                    }
                 }
-                .disabled(!model.isRadioConnected)
+                .disabled(!model.isRadioConnected || !model.configuration.allowCATTransmit)
 
-                HStack {
+                HStack(spacing: Layout.compact) {
                     TextField("RF power W", value: $model.remoteRFPowerWatts, format: .number)
-                        .frame(width: 120)
-                    Button("Apply Policy Power") { model.applyRemoteRFPower() }
+                        .frame(width: 118)
+                    Button("Apply power") { model.applyRemoteRFPower() }
+                        .disabled(!model.isRadioConnected || !model.configuration.allowCATTransmit)
                     Spacer()
                     ForEach(RemoteStationAction.allCases, id: \.self) { action in
                         Button(action.rawValue.capitalized) { model.performRemoteStationAction(action) }
                             .disabled(!model.remoteActionAllowed(action))
                     }
                 }
-                .disabled(!model.isRunning)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(8)
+            .padding(Layout.tight)
+        }
+    }
+
+    private func offsetControl(
+        label: String,
+        isOn: Binding<Bool>,
+        offset: Binding<Int>,
+        actionLabel: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: Layout.compact) {
+            Toggle(label, isOn: isOn)
+                .toggleStyle(.checkbox)
+            TextField("Hz", value: offset, format: .number)
+                .frame(width: Layout.compactFieldWidth)
+            Button(actionLabel, action: action)
+        }
+    }
+
+    private var activityTab: some View {
+        VStack(alignment: .leading, spacing: Layout.standard) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: Layout.tight) {
+                    Text("Recent activity")
+                        .font(.headline)
+                    Text("Newest events appear last. Showing up to 18 entries.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text("\(model.events.count) total")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            Divider()
+            if model.events.isEmpty {
+                ContentUnavailableView(
+                    "No activity yet",
+                    systemImage: "waveform.path",
+                    description: Text("Start the bridge to see connection and CAT events.")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                Text(model.events.suffix(18).joined(separator: "\n"))
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .lineLimit(18)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(Layout.standard)
+                    .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
+        .padding(.top, Layout.compact)
+    }
+
+    private var configurationTab: some View {
+        VStack(alignment: .leading, spacing: Layout.standard) {
+            GroupBox("Connection") {
+                connectionSettings
+                    .padding(Layout.tight)
+            }
+            GroupBox("Local services") {
+                Grid(alignment: .leading, horizontalSpacing: Layout.standard, verticalSpacing: Layout.compact) {
+                    configurationRow("CAT port") {
+                        TextField("CAT port", value: $model.configuration.catPort, format: .number)
+                    }
+                    configurationRow("RigCtlD port") {
+                        TextField("RigCtlD port", value: $model.configuration.rigCtlPort, format: .number)
+                    }
+                    GridRow {
+                        Text("Control")
+                            .foregroundStyle(.secondary)
+                        Toggle("Enable full CAT and station control", isOn: $model.configuration.allowCATTransmit)
+                    }
+                    GridRow {
+                        Text("Startup")
+                            .foregroundStyle(.secondary)
+                        Toggle("Start protocol servers automatically", isOn: $model.configuration.launchServersAutomatically)
+                    }
+                }
+                .padding(Layout.tight)
+            }
+            HStack {
+                Text(configurationGuidance)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                Spacer()
+                Button("Save Settings") { model.save() }
+                    .keyboardShortcut("s", modifiers: .command)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.top, Layout.compact)
+        .disabled(model.isRunning)
+    }
+
+    @ViewBuilder
+    private var connectionSettings: some View {
+        Grid(alignment: .leading, horizontalSpacing: Layout.standard, verticalSpacing: Layout.compact) {
+            configurationRow("Radio connection") {
+                Picker("Radio connection", selection: $model.configuration.connectionKind) {
+                    ForEach(AppConfiguration.ConnectionKind.allCases, id: \.self) { kind in
+                        Text(kind.rawValue).tag(kind)
+                    }
+                }
+                .labelsHidden()
+            }
+
+            switch model.configuration.connectionKind {
+            case .remoteAgent:
+                configurationRow("Agent HTTPS URL") {
+                    TextField("https://station.tailnet.ts.net", text: $model.configuration.remoteAgentBaseURL)
+                        .textContentType(.URL)
+                }
+                configurationRow("Bearer token") {
+                    HStack {
+                        SecureField("Stored securely in Keychain", text: $model.remoteAgentToken)
+                            .textContentType(.password)
+                        Button("Forget saved token") { model.forgetRemoteAgentToken() }
+                    }
+                }
+            case .smartLink:
+                configurationRow("SmartLink email") {
+                    TextField("Email", text: $model.configuration.smartLinkEmail)
+                        .textContentType(.username)
+                }
+                configurationRow("Password") {
+                    SecureField("Needed once", text: $model.smartLinkPassword)
+                        .textContentType(.password)
+                }
+                configurationRow("Radio serial") {
+                    HStack {
+                        TextField("Optional preferred serial", text: $model.configuration.smartLinkRadioSerial)
+                        Button("Forget session") { model.forgetSmartLinkSession() }
+                        Button("Reset pin") { model.resetSmartLinkCertificatePin() }
+                    }
+                }
+                stationAndSliceRows
+            case .local:
+                configurationRow("Radio host") {
+                    TextField("IP address or hostname", text: $model.configuration.radioHost)
+                }
+                stationAndSliceRows
+            case .legacyXCAT:
+                configurationRow("xCAT host") {
+                    TextField("Host", text: $model.configuration.legacyXCATHost)
+                }
+                configurationRow("xCAT CAT port") {
+                    TextField("Port", value: $model.configuration.legacyXCATPort, format: .number)
+                }
+                GridRow {
+                    Text("Supervision")
+                        .foregroundStyle(.secondary)
+                    Toggle("Restart xCAT automatically if it crashes", isOn: $model.configuration.superviseLegacyXCAT)
+                }
+            case .simulator:
+                stationAndSliceRows
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var stationAndSliceRows: some View {
+        configurationRow("Station") {
+            HStack {
+                TextField("Station name", text: $model.configuration.stationName)
+                Text("Slice")
+                    .foregroundStyle(.secondary)
+                TextField("A", text: $model.configuration.sliceLetter)
+                    .frame(width: 64)
+            }
+        }
+    }
+
+    private func configurationRow<Content: View>(
+        _ label: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        GridRow {
+            Text(label)
+                .foregroundStyle(.secondary)
+                .frame(width: Layout.labelWidth, alignment: .leading)
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var connectionLabel: String {
+        if model.isRadioConnected { return "Connected" }
+        if model.isRunning { return "Connecting" }
+        return "Stopped"
+    }
+
+    private var connectionColor: Color {
+        if model.isRadioConnected { return .green }
+        if model.isRunning { return .orange }
+        return .secondary
+    }
+
+    private var connectionSymbol: String {
+        if model.isRadioConnected { return "checkmark.circle.fill" }
+        if model.isRunning { return "arrow.triangle.2.circlepath" }
+        return "stop.circle"
+    }
+
+    private var configurationGuidance: String {
+        switch model.configuration.connectionKind {
+        case .remoteAgent:
+            "The bearer token is stored in macOS Keychain. All radio and station commands go through the Windows agent."
+        case .smartLink:
+            "The password remains in memory; refresh credentials and the radio certificate pin are stored in Keychain."
+        case .legacyXCAT:
+            "RUMlogNG → OM0RX-xCat → xCAT → SmartLink → FlexRadio"
+        default:
+            "CAT and RigCtlD listeners bind only to this Mac's loopback interface."
         }
     }
 }

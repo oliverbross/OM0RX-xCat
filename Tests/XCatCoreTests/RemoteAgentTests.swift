@@ -2,10 +2,10 @@ import Foundation
 import Testing
 @testable import XCatCore
 
-@Suite("Remote Station Agent")
+@Suite("Remote Station Agent", .serialized)
 struct RemoteAgentTests {
     @Test func manualReconnectRepeatsOnlyTheReadOnlyStateRequest() async throws {
-        RemoteAgentURLProtocol.recorder.reset()
+        RemoteAgentURLProtocol.recorder.reset(stateData: Data(Self.safeState.utf8))
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [RemoteAgentURLProtocol.self]
         let session = URLSession(configuration: configuration)
@@ -29,6 +29,29 @@ struct RemoteAgentTests {
         #expect(requests.contains { $0.url?.path == "/api/v1/commands" } == false)
     }
 
+    @Test func forwardsAdvertisedTransmitCommandDespiteStationAdvisories() async throws {
+        RemoteAgentURLProtocol.recorder.reset(stateData: Data(Self.blockedState.utf8))
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RemoteAgentURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let client = try RemoteAgentClient(
+            baseURL: "https://station.invalid",
+            token: "test-credential",
+            session: session
+        )
+
+        await client.start()
+        #expect(await waitForStateRequestCount(1))
+        try await client.setTransmit(true)
+        await client.stop()
+        session.invalidateAndCancel()
+
+        let commandRequests = RemoteAgentURLProtocol.recorder.snapshot().filter {
+            $0.httpMethod == "POST" && $0.url?.path == "/api/v1/commands"
+        }
+        #expect(commandRequests.count == 1)
+    }
+
     @Test func decodesAuthoritativeTwoVFOAndStationState() throws {
         let decoded = try RemoteAgentStateDecoder.stateResponse(Data(Self.safeState.utf8))
         let snapshot = decoded.snapshot
@@ -45,20 +68,20 @@ struct RemoteAgentTests {
         #expect(snapshot.vfo("A")?.xitOffsetHz == -100)
         #expect(snapshot.rfPowerWatts == 25)
         #expect(decoded.cwSpeed == 28)
-        #expect(snapshot.remoteStationStatus?.hazardousWritesAllowed == true)
+        #expect(snapshot.remoteStationStatus?.inhibitors.isEmpty == true)
         #expect(snapshot.remoteStationStatus?.kpaSummary == "KPA OPERATE")
         #expect(snapshot.remoteStationStatus?.katSummary == "KAT ANT1")
         #expect(snapshot.remoteStationStatus?.routeSummary == "Route 17m Beam")
         #expect(snapshot.remoteStationStatus?.alarmSummary == "ALARM clear")
-        #expect(snapshot.remoteStationStatus?.allows(.tune) == true)
+        #expect(snapshot.remoteStationStatus?.allowedActions.contains("tune") == true)
     }
 
-    @Test func staleUncommissionedAlarmStateFailsClosed() throws {
+    @Test func reportsStaleUncommissionedAlarmStateAsAdvisories() throws {
         let decoded = try RemoteAgentStateDecoder.stateResponse(Data(Self.blockedState.utf8))
         let status = try #require(decoded.snapshot.remoteStationStatus)
 
         #expect(decoded.snapshot.isConnected == false)
-        #expect(status.hazardousWritesAllowed == false)
+        #expect(status.inhibitors.isEmpty == false)
         #expect(status.inhibitors.contains("Radio state stale"))
         #expect(status.inhibitors.contains("Station not commissioned"))
         #expect(status.inhibitors.contains("KPA500 is disconnected"))
@@ -187,17 +210,25 @@ struct RemoteAgentTests {
 private final class RequestRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var requests: [URLRequest] = []
+    private var stateData = Data(RemoteAgentTests.safeState.utf8)
 
     func append(_ request: URLRequest) {
         lock.withLock { requests.append(request) }
     }
 
-    func reset() {
-        lock.withLock { requests.removeAll() }
+    func reset(stateData: Data) {
+        lock.withLock {
+            requests.removeAll()
+            self.stateData = stateData
+        }
     }
 
     func snapshot() -> [URLRequest] {
         lock.withLock { requests }
+    }
+
+    func currentStateData() -> Data {
+        lock.withLock { stateData }
     }
 }
 
@@ -205,7 +236,8 @@ private final class RemoteAgentURLProtocol: URLProtocol, @unchecked Sendable {
     static let recorder = RequestRecorder()
 
     override class func canInit(with request: URLRequest) -> Bool {
-        request.url?.scheme == "https" && request.url?.path == "/api/v1/state"
+        request.url?.scheme == "https"
+            && ["/api/v1/state", "/api/v1/commands"].contains(request.url?.path ?? "")
     }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -222,7 +254,12 @@ private final class RemoteAgentURLProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
             return
         }
-        let data = Data(RemoteAgentTests.safeState.utf8)
+        let data: Data
+        if request.url?.path == "/api/v1/commands" {
+            data = Data("{\"success\":true}".utf8)
+        } else {
+            data = Self.recorder.currentStateData()
+        }
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data)
         client?.urlProtocolDidFinishLoading(self)

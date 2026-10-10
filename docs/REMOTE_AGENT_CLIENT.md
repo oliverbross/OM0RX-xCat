@@ -16,8 +16,8 @@ KPA500, and KAT500 hardware connections.
 5. Paste the agent `server.control_token`, then choose **Save Settings**. The
    token is stored in macOS Keychain under an endpoint-specific account and is
    cleared from the UI.
-6. Keep **Allow CAT transmit and CW commands** off during receive-only
-   commissioning. Start OM0RX-xCat and point RUMlogNG to `127.0.0.1:15002`.
+6. Enable **Full CAT and station control** for normal operation. Start
+   OM0RX-xCat and point RUMlogNG to `127.0.0.1:15002`.
 
 Use **Forget Saved Agent Token** to remove the Keychain credential.
 
@@ -33,10 +33,10 @@ widget provides the same status, safety inhibitors, and only those station
 standby, operate, tune, or cancel buttons currently present in
 `station.allowed_actions`.
 
-The application also exposes guarded RIT, XIT, and RF-policy-power controls.
+The application also exposes RIT, XIT, and RF-policy-power controls.
 Kenwood-compatible CAT `RT`, `XT`, and `PC` reads are supported. `XT` and `PC`
-writes require the CAT transmit opt-in, and the Windows agent independently
-enforces commissioning and exact station policy.
+writes require the full-control opt-in, and the Windows agent remains the
+authoritative hardware and station-policy endpoint.
 
 ## Safety boundary
 
@@ -45,10 +45,10 @@ implementation. It never creates a parallel SmartLink client. All local CAT and
 RigCtlD writes therefore translate to version-1 `POST /api/v1/commands`
 envelopes with unique idempotency keys.
 
-Hazardous writes are rejected locally when authoritative state is stale,
-unknown, unbound, uncommissioned, blocked, or alarmed, and remain subject to the
-agent's own coordinator. Recovery operations—PTT off, CW clear, standby, and
-cancel—are intentionally not hidden behind the hazardous-write latch.
+With full control enabled, xCat forwards every command advertised by the agent.
+Commissioning, route, issue, and alarm state remains visible as operator
+advisory information but does not create a second Mac-side policy latch. Basic
+transport and command-capability validation still applies.
 
 No bearer credential is logged or added to a URL. WebSocket authentication uses
 the `Authorization: Bearer` header.

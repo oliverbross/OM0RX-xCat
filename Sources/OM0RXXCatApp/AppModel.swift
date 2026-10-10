@@ -30,7 +30,7 @@ final class AppModel: ObservableObject {
     private var stopTask: Task<Void, Never>?
 
     var isStationReady: Bool {
-        isRadioConnected && (remoteStationStatus?.hazardousWritesAllowed ?? true)
+        isRadioConnected
     }
 
     init() {
@@ -378,7 +378,12 @@ final class AppModel: ObservableObject {
     }
 
     func remoteActionAllowed(_ action: RemoteStationAction) -> Bool {
-        remoteStationStatus?.allows(action) == true
+        guard isRunning, isRadioConnected,
+              remoteStationStatus?.supportedCommands.contains("station_\(action.rawValue)") == true else {
+            return false
+        }
+        if action == .standby || action == .cancel { return true }
+        return configuration.allowCATTransmit
     }
 
     private func record(_ message: String) {

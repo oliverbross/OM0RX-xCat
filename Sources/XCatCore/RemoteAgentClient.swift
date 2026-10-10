@@ -186,9 +186,6 @@ public actor RemoteAgentClient: RadioControlling {
     }
 
     public func performStationAction(_ action: RemoteStationAction) async throws {
-        guard value.remoteStationStatus?.allows(action) == true else {
-            throw XCatError.server("The Remote Agent does not currently allow station \(action.rawValue).")
-        }
         try await execute(.station(action))
     }
 
@@ -264,15 +261,6 @@ public actor RemoteAgentClient: RadioControlling {
         guard shouldRun else { throw XCatError.notConnected }
         guard value.remoteStationStatus?.supportedCommands.contains(command.name) == true else {
             throw XCatError.server("Remote Agent does not advertise \(command.name).")
-        }
-        if command.requiresSafeStation {
-            guard webSocket != nil, Date().timeIntervalSince(lastStreamMessage) <= 25 else {
-                throw XCatError.server("Remote Agent write inhibited: state stream is stale")
-            }
-            guard let status = value.remoteStationStatus, status.hazardousWritesAllowed else {
-                let reason = value.remoteStationStatus?.inhibitors.first ?? "Agent safety state is unavailable"
-                throw XCatError.server("Remote Agent write inhibited: \(reason)")
-            }
         }
         let requestID = "xcat-\(UUID().uuidString.lowercased())"
         let request = try RemoteAgentRequestBuilder.commandRequest(
