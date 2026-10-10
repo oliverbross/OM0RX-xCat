@@ -848,18 +848,24 @@ struct ContentView: View {
 
     private var connectionLabel: String {
         if model.isRadioConnected { return "Connected" }
+        if model.configuration.connectionKind == .remoteAgent,
+           model.isRemoteAgentConnected { return "Agent connected" }
         if model.isRunning { return "Connecting" }
         return "Stopped"
     }
 
     private var connectionColor: Color {
         if model.isRadioConnected { return .green }
+        if model.configuration.connectionKind == .remoteAgent,
+           model.isRemoteAgentConnected { return .orange }
         if model.isRunning { return .orange }
         return .secondary
     }
 
     private var connectionSymbol: String {
         if model.isRadioConnected { return "checkmark.circle.fill" }
+        if model.configuration.connectionKind == .remoteAgent,
+           model.isRemoteAgentConnected { return "exclamationmark.triangle.fill" }
         if model.isRunning { return "arrow.triangle.2.circlepath" }
         return "stop.circle"
     }

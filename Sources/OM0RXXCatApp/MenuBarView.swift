@@ -205,12 +205,18 @@ struct MenuBarView: View {
     }
 
     private var connectionBadge: String {
-        guard model.isRadioConnected else { return "OFFLINE" }
+        guard model.isRadioConnected else {
+            return model.isRemoteAgentConnected ? "STALE" : "OFFLINE"
+        }
         return model.radioSnapshot?.isTransmitting == true ? "TX" : "RX"
     }
 
     private var badgeColor: Color {
-        guard model.isRadioConnected else { return Color(red: 0.28, green: 0.33, blue: 0.41) }
+        guard model.isRadioConnected else {
+            return model.isRemoteAgentConnected
+                ? amber.opacity(0.72)
+                : Color(red: 0.28, green: 0.33, blue: 0.41)
+        }
         return model.radioSnapshot?.isTransmitting == true
             ? Color(red: 0.72, green: 0.11, blue: 0.11)
             : Color(red: 0.09, green: 0.40, blue: 0.20)

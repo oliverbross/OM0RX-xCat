@@ -59,6 +59,9 @@ Build 6 adds the complete Station configuration editor, rich live station
 monitor, and an **Undock Monitor** window. Open it from the menu-bar panel or
 with **Monitor** in the main window; it shares the existing connection and does
 not create a second radio session.
+Remote Agent transport health and radio-telemetry readiness are displayed
+separately, so a stale radio advisory does not masquerade as a reconnecting
+HTTPS/WebSocket session.
 The main window is organized into compact **Status**, **Activity**, **Spots**,
 **Station**, and **Configuration** tabs. Each tab fits within the window without a
 page-level scrollbar, and connection health is always shown with both color

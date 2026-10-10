@@ -10,6 +10,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var events: [String] = []
     @Published private(set) var isRunning = false
     @Published private(set) var isRadioConnected = false
+    @Published private(set) var isRemoteAgentConnected = false
     @Published private(set) var radioSnapshot: RadioSnapshot?
     @Published private(set) var lastSnapshotAt: Date?
     @Published var smartLinkPassword = ""
@@ -120,6 +121,7 @@ final class AppModel: ObservableObject {
                     token: token,
                     onState: { [weak self] state, description in
                         Task { @MainActor in
+                            self?.isRemoteAgentConnected = state == .ready
                             if state != .ready {
                                 self?.isRadioConnected = false
                                 self?.status = description
@@ -353,6 +355,7 @@ final class AppModel: ObservableObject {
         radio = nil
         isRunning = false
         isRadioConnected = false
+        isRemoteAgentConnected = false
         radioSnapshot = nil
         lastSnapshotAt = nil
         remoteStationStatus = nil

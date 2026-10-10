@@ -93,6 +93,14 @@ transmit RF.
   The shared Windows branch now converts RGB to opaque ARGB and requires the
   matching zero-success acknowledgement.
 - The complete Swift suite passed: 35 tests, 0 failures, across 7 suites.
+- Live display-only acceptance sent six styled markers through the authenticated
+  agent: gray, red, orange, blue, purple, and cyan (`N0GRY` through `N0CYN`).
+  xCat recorded a matching FLEX acknowledgement for every marker; no RF or
+  station-control command was used.
+- Remote Agent transport health is tracked separately from authoritative radio
+  readiness. A stale radio snapshot now displays **Agent connected** / **STALE**
+  instead of falsely presenting the healthy HTTPS/WebSocket session as a
+  reconnect loop.
 - Final Maestro display acceptance remains pending only on deployment and a
   controlled restart of the updated Windows agent. No RF transmission was
   used during this verification.
