@@ -37,6 +37,13 @@ struct OM0RXXCatApp: App {
         .windowResizability(.contentMinSize)
         .defaultSize(width: 900, height: 620)
 
+        Window("OM0RX Station Monitor", id: "station-monitor") {
+            MenuBarView(allowsUndocking: false, isDetached: true)
+                .environmentObject(model)
+        }
+        .windowResizability(.contentSize)
+        .defaultSize(width: 548, height: 390)
+
         MenuBarExtra {
             MenuBarView()
                 .environmentObject(model)

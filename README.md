@@ -21,6 +21,8 @@ Copyright © 2026 Oliver Bross OM0RX. Licensed under GPL-3.0-only.
 - Compact menu-bar station monitor with live RX/TX state, exact frequency,
   dual VFOs, TX power, SWR, RF drive, detailed KPA/KAT telemetry, route
   alignment, station actions, reconnect, and configuration access.
+- The same station monitor can be undocked into a movable, always-on-top
+  window. Its screen position is restored on later launches.
 - Built-in RUMlogNG UDP spot bridge with independent Logbook and Contest rule
   sets, priorities, colours, and marker lifetimes. Spots are sent through the
   authenticated Remote Station Agent and never key PTT or transmit RF.
@@ -53,6 +55,10 @@ full CAT and station control** is selected, xCat forwards every command that the
 agent advertises and presents commissioning, route, and alarm information as
 operator advisories. The Windows agent remains the authoritative hardware and
 station-policy endpoint.
+Build 6 adds the complete Station configuration editor, rich live station
+monitor, and an **Undock Monitor** window. Open it from the menu-bar panel or
+with **Monitor** in the main window; it shares the existing connection and does
+not create a second radio session.
 The main window is organized into compact **Status**, **Activity**, **Spots**,
 **Station**, and **Configuration** tabs. Each tab fits within the window without a
 page-level scrollbar, and connection health is always shown with both color

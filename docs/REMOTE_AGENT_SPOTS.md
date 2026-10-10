@@ -84,6 +84,9 @@ transmit RF.
 - The Station tab loaded the complete Windows configuration and renders FLEX,
   KPA/KAT, tune, antenna-name, and all 11 per-band routing/drive rows on one
   screen without a page scrollbar.
+- The live station monitor was verified both in the menu-bar panel and as the
+  separate movable, always-on-top **OM0RX Station Monitor** window. The window
+  shares the active xCat model and remembers its last screen position.
 - RUMlog delivered a real `DL7PIA` 10.116 MHz spot to xCat. This exposed a
   Windows driver defect: it sent six-digit RGB although the SmartSDR Spot API
   requires ARGB, and it reported success without matching the radio response.

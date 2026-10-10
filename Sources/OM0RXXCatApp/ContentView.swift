@@ -4,6 +4,7 @@ import XCatCore
 
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
+    @Environment(\.openWindow) private var openWindow
     @State private var selectedTab: WorkspaceTab = .status
     @State private var selectedSpotFeed: SpotFeed = .logbook
 
@@ -82,6 +83,11 @@ struct ContentView: View {
                 Button("Reconnect") { model.reconnectRemoteAgent() }
                     .help("Re-establish the Remote Agent HTTPS and WebSocket connection")
             }
+            Button("Monitor") {
+                openWindow(id: "station-monitor")
+                NSApplication.shared.activate(ignoringOtherApps: true)
+            }
+            .help("Open the live station monitor as a movable always-on-top window")
             Button(model.isRunning ? "Stop" : "Start") {
                 model.isRunning ? model.stop() : model.start()
             }

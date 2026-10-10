@@ -6,6 +6,14 @@ struct MenuBarView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.openWindow) private var openWindow
 
+    let allowsUndocking: Bool
+    let isDetached: Bool
+
+    init(allowsUndocking: Bool = true, isDetached: Bool = false) {
+        self.allowsUndocking = allowsUndocking
+        self.isDetached = isDetached
+    }
+
     private let cyan = Color(red: 0.40, green: 0.91, blue: 0.98)
     private let green = Color(red: 0.43, green: 0.91, blue: 0.72)
     private let amber = Color(red: 0.99, green: 0.79, blue: 0.39)
@@ -52,6 +60,11 @@ struct MenuBarView: View {
                 endPoint: .bottom
             )
         )
+        .background {
+            if isDetached {
+                FloatingWindowConfigurator()
+            }
+        }
         .preferredColorScheme(.dark)
     }
 
@@ -168,6 +181,12 @@ struct MenuBarView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             Spacer()
+            if allowsUndocking {
+                Button("Undock Monitor") { openDetachedMonitor() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Open this monitor as a movable always-on-top window")
+            }
             Button("Configure") { openMainWindow() }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
@@ -236,6 +255,33 @@ struct MenuBarView: View {
     private func openMainWindow() {
         openWindow(id: "main")
         NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+
+    private func openDetachedMonitor() {
+        openWindow(id: "station-monitor")
+        NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+}
+
+private struct FloatingWindowConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        configure(view)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        configure(nsView)
+    }
+
+    private func configure(_ view: NSView) {
+        DispatchQueue.main.async {
+            guard let window = view.window else { return }
+            window.level = .floating
+            window.isMovableByWindowBackground = true
+            window.collectionBehavior.insert(.canJoinAllSpaces)
+            window.setFrameAutosaveName("OM0RXStationMonitor")
+        }
     }
 }
 
