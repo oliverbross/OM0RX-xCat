@@ -61,10 +61,21 @@ import Testing
         """.utf8)
     let update = try RUMlogRotatorParser.parse(xml)
     #expect(update.callsign == "VK6ABC")
+    #expect(update.countryCode == "VK")
     #expect(update.grid == "OF88AA")
     #expect(update.band == "20m")
     #expect(update.countryBearing == 249)
     #expect(update.stationBearing == 251)
+}
+
+@Test func rumlogCountryRefreshKeepsStationCallsignAtSameBearing() throws {
+    let update = try RUMlogRotatorParser.parse(Data("""
+        <AppInfo><ShownDxcc>EA</ShownDxcc><HdgToDxcc>249</HdgToDxcc></AppInfo>
+        """.utf8))
+    #expect(update.callsign.isEmpty)
+    #expect(update.countryCode == "EA")
+    #expect(update.stableLabel(previous: "EA2ESU", previousBearing: 249, targetBearing: 249, fallback: "DXCC") == "EA2ESU")
+    #expect(update.stableLabel(previous: "EA2ESU", previousBearing: 249, targetBearing: 210, fallback: "DXCC") == "EA")
 }
 
 @Test func rumlogRotorCommandAndJSONAreAccepted() throws {

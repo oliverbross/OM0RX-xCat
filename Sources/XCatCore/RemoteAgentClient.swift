@@ -22,6 +22,10 @@ struct PendingRadioWrites: Sendable {
         modes[vfo.uppercased()] = Value(value: mode.uppercased(), expiresAt: now.addingTimeInterval(lifetime))
     }
 
+    mutating func cancelFrequency(vfo: String) {
+        frequencies.removeValue(forKey: vfo.uppercased())
+    }
+
     mutating func reconcile(_ snapshot: inout RadioSnapshot, now: Date = Date()) {
         var completedFrequencies: [String] = []
         for (letter, pending) in frequencies {
@@ -74,6 +78,11 @@ public actor RemoteAgentClient: RadioControlling {
         station: "Remote Agent",
         remoteStationStatus: RemoteStationStatus()
     )
+    private var authoritativeValue = RadioSnapshot(
+        isConnected: false,
+        station: "Remote Agent",
+        remoteStationStatus: RemoteStationStatus()
+    )
     private var wordsPerMinute = 25
     private var shouldRun = false
     private var generation = 0
@@ -84,6 +93,8 @@ public actor RemoteAgentClient: RadioControlling {
     private var reconnectTask: Task<Void, Never>?
     private var lastStreamMessage = Date.distantPast
     private var pendingWrites = PendingRadioWrites()
+    private var frequencyVerificationTasks: [String: Task<Void, Never>] = [:]
+    private var frequencyVerificationIDs: [String: UUID] = [:]
 
     public init(
         baseURL: String,
@@ -113,6 +124,9 @@ public actor RemoteAgentClient: RadioControlling {
     public func stop() {
         shouldRun = false
         generation += 1
+        frequencyVerificationTasks.values.forEach { $0.cancel() }
+        frequencyVerificationTasks.removeAll()
+        frequencyVerificationIDs.removeAll()
         reconnectTask?.cancel()
         reconnectTask = nil
         streamTask?.cancel()
@@ -134,6 +148,9 @@ public actor RemoteAgentClient: RadioControlling {
         }
         reconnectAttempt = 0
         generation += 1
+        frequencyVerificationTasks.values.forEach { $0.cancel() }
+        frequencyVerificationTasks.removeAll()
+        frequencyVerificationIDs.removeAll()
         reconnectTask?.cancel()
         reconnectTask = nil
         streamTask?.cancel()
@@ -156,6 +173,7 @@ public actor RemoteAgentClient: RadioControlling {
         try await execute(.frequency(frequencyHz, vfo: "A"))
         pendingWrites.expectFrequency(frequencyHz, vfo: "A")
         publishPendingWrites()
+        scheduleFrequencyVerification(frequencyHz, vfo: "A")
     }
 
     public func setFrequency(_ frequencyHz: Int64) async throws {
@@ -164,6 +182,7 @@ public actor RemoteAgentClient: RadioControlling {
         try await execute(.frequency(frequencyHz, vfo: vfo))
         pendingWrites.expectFrequency(frequencyHz, vfo: vfo)
         publishPendingWrites()
+        scheduleFrequencyVerification(frequencyHz, vfo: vfo)
     }
 
     public func setSecondaryFrequency(_ frequencyHz: Int64) async throws {
@@ -171,6 +190,7 @@ public actor RemoteAgentClient: RadioControlling {
         try await execute(.frequency(frequencyHz, vfo: "B"))
         pendingWrites.expectFrequency(frequencyHz, vfo: "B")
         publishPendingWrites()
+        scheduleFrequencyVerification(frequencyHz, vfo: "B")
     }
 
     public func setMode(_ mode: String) async throws {
@@ -386,6 +406,7 @@ public actor RemoteAgentClient: RadioControlling {
 
     private func apply(_ decoded: RemoteAgentDecodedState) {
         var snapshot = decoded.snapshot
+        authoritativeValue = decoded.snapshot
         pendingWrites.reconcile(&snapshot)
         value = snapshot
         wordsPerMinute = decoded.cwSpeed
@@ -393,10 +414,50 @@ public actor RemoteAgentClient: RadioControlling {
     }
 
     private func publishPendingWrites() {
-        var snapshot = value
+        var snapshot = authoritativeValue
         pendingWrites.reconcile(&snapshot)
         value = snapshot
         onSnapshot(value)
+    }
+
+    private func scheduleFrequencyVerification(_ frequencyHz: Int64, vfo: String) {
+        let letter = vfo.uppercased()
+        let verificationID = UUID()
+        frequencyVerificationTasks[letter]?.cancel()
+        frequencyVerificationIDs[letter] = verificationID
+        frequencyVerificationTasks[letter] = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            await self?.verifyFrequency(frequencyHz, vfo: letter, verificationID: verificationID)
+        }
+    }
+
+    private func verifyFrequency(_ frequencyHz: Int64, vfo: String, verificationID: UUID) async {
+        guard shouldRun, frequencyVerificationIDs[vfo] == verificationID else { return }
+        if authoritativeValue.vfo(vfo)?.frequencyHz == frequencyHz {
+            frequencyVerificationTasks[vfo] = nil
+            frequencyVerificationIDs[vfo] = nil
+            return
+        }
+        do {
+            try await execute(.frequency(frequencyHz, vfo: vfo))
+            guard !Task.isCancelled, frequencyVerificationIDs[vfo] == verificationID else { return }
+            pendingWrites.expectFrequency(frequencyHz, vfo: vfo)
+            publishPendingWrites()
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled, frequencyVerificationIDs[vfo] == verificationID else { return }
+            if authoritativeValue.vfo(vfo)?.frequencyHz != frequencyHz {
+                pendingWrites.cancelFrequency(vfo: vfo)
+                publishPendingWrites()
+                transition(.ready, "FLEX did not confirm \(vfo) at \(frequencyHz) Hz")
+            }
+        } catch {
+            pendingWrites.cancelFrequency(vfo: vfo)
+            publishPendingWrites()
+            transition(.ready, "Frequency retry failed: \(error.localizedDescription)")
+        }
+        frequencyVerificationTasks[vfo] = nil
+        frequencyVerificationIDs[vfo] = nil
     }
 
     private func connectionFailed(_ message: String, generation currentGeneration: Int) {

@@ -72,6 +72,25 @@ struct RemoteAgentTests {
         session.invalidateAndCancel()
     }
 
+    @Test func retriesAcknowledgedFrequencyWriteWithoutAuthoritativeReadback() async throws {
+        RemoteAgentURLProtocol.recorder.reset(stateData: Data(Self.safeState.utf8))
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RemoteAgentURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let client = try RemoteAgentClient(
+            baseURL: "https://station.invalid",
+            token: "test-credential",
+            session: session
+        )
+
+        await client.start()
+        #expect(await waitForStateRequestCount(1))
+        try await client.setPrimaryFrequency(14_195_000)
+        #expect(await waitForCommandRequestCount(2))
+        await client.stop()
+        session.invalidateAndCancel()
+    }
+
     @Test func pendingCATWriteMasksOlderStateThenYieldsToConfirmationOrExpiry() {
         let now = Date(timeIntervalSince1970: 1_760_000_000)
         var pending = PendingRadioWrites(lifetime: 10)
@@ -87,6 +106,12 @@ struct RemoteAgentTests {
         pending.reconcile(&confirmed, now: now.addingTimeInterval(2))
         #expect(confirmed.frequencyHz == 14_195_000)
         #expect(confirmed.mode == "USB")
+
+        pending.expectFrequency(7_100_000, vfo: "A", now: now)
+        pending.cancelFrequency(vfo: "A")
+        var cancelled = RadioSnapshot(frequencyHz: 14_200_000, mode: "USB")
+        pending.reconcile(&cancelled, now: now.addingTimeInterval(1))
+        #expect(cancelled.frequencyHz == 14_200_000)
 
         pending.expectFrequency(7_100_000, vfo: "A", now: now)
         var later = RadioSnapshot(frequencyHz: 14_200_000, mode: "USB")
@@ -231,6 +256,17 @@ struct RemoteAgentTests {
     private func waitForStateRequestCount(_ count: Int) async -> Bool {
         for _ in 0..<100 {
             if RemoteAgentURLProtocol.recorder.snapshot().count >= count { return true }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return false
+    }
+
+    private func waitForCommandRequestCount(_ count: Int) async -> Bool {
+        for _ in 0..<300 {
+            let commands = RemoteAgentURLProtocol.recorder.snapshot().filter {
+                $0.httpMethod == "POST" && $0.url?.path == "/api/v1/commands"
+            }
+            if commands.count >= count { return true }
             try? await Task.sleep(for: .milliseconds(10))
         }
         return false

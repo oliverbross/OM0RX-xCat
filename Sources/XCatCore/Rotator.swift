@@ -272,19 +272,31 @@ public enum RotatorGeometry {
 
 public struct RUMlogRotatorUpdate: Equatable, Sendable {
     public var callsign: String
+    public var countryCode: String
     public var grid: String
     public var band: String
     public var countryBearing: Double?
     public var stationBearing: Double?
     public var commandedBearing: Double?
 
-    public init(callsign: String = "", grid: String = "", band: String = "", countryBearing: Double? = nil, stationBearing: Double? = nil, commandedBearing: Double? = nil) {
+    public init(callsign: String = "", countryCode: String = "", grid: String = "", band: String = "", countryBearing: Double? = nil, stationBearing: Double? = nil, commandedBearing: Double? = nil) {
         self.callsign = callsign
+        self.countryCode = countryCode
         self.grid = grid
         self.band = band
         self.countryBearing = countryBearing
         self.stationBearing = stationBearing
         self.commandedBearing = commandedBearing
+    }
+
+    public func stableLabel(previous: String, previousBearing: Double?, targetBearing: Double, fallback: String) -> String {
+        if !callsign.isEmpty { return callsign }
+        if !previous.isEmpty,
+           let previousBearing,
+           abs(RotatorGeometry.shortestDifference(from: previousBearing, to: targetBearing)) <= 1.0 {
+            return previous
+        }
+        return countryCode.isEmpty ? fallback : countryCode
     }
 }
 
@@ -322,7 +334,8 @@ public enum RUMlogRotatorParser {
             return RotatorGeometry.normalized(value)
         }
         let update = RUMlogRotatorUpdate(
-            callsign: first(["shownstation", "dxcall", "callsign", "call", "stationcall", "showndxcc"]).uppercased(),
+            callsign: first(["shownstation", "dxcall", "callsign", "call", "stationcall"]).uppercased(),
+            countryCode: first(["showndxcc", "dxcc"]).uppercased(),
             grid: first(["shownstationlocation", "showndxcclocation", "dxgrid", "grid", "gridsquare", "locator"]).uppercased(),
             band: first(["currentband", "band", "bandname"]).lowercased(),
             countryBearing: bearing(["hdgtodxcc", "headingtocountry", "countrybearing", "dxccbearing", "bearing"]),

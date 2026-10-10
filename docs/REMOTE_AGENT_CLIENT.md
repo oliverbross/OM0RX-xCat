@@ -38,6 +38,12 @@ Kenwood-compatible CAT `RT`, `XT`, and `PC` reads are supported. `XT` and `PC`
 writes require the full-control opt-in, and the Windows agent remains the
 authoritative hardware and station-policy endpoint.
 
+After a successful CAT frequency request, xCat compares the requested VFO with
+the authoritative WebSocket readback. If the first acknowledged request is not
+observed within two seconds it is retried once. If the retry is still not
+confirmed, xCat removes the temporary CAT value and reports the true FLEX
+frequency rather than leaving RUMlog on a false QSY.
+
 ## Safety boundary
 
 Remote Agent mode creates a `RemoteAgentClient` as the only `RadioControlling`

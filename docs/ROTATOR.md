@@ -44,6 +44,9 @@ The controller applies a one-degree physical deadband even when the configured
 minimum change is zero. This prevents repeated RUMlog updates for the same
 callsign from commanding an already-settled rotor without delaying a real
 target change.
+RUMlog can follow a station update with a country-only refresh. OM0RX-xCat
+retains the station callsign when that refresh has the same target bearing, so
+the monitor does not collapse a selected call such as `EA2ESU` to `EA`.
 
 If RUMlog resolves a callsign but OM0RX-xCat remains on the previous target,
 open RUMlog **Settings > UDP** and cycle **App info (N1MM, RUMlog)** off and on.

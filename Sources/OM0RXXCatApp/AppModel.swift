@@ -929,7 +929,12 @@ final class AppModel: ObservableObject {
             guard let selected else { return }
             let band = Self.normalizedBand(update.band.isEmpty ? currentBand : update.band)
             let ruledBearing = applyRotatorBandRules(selected, band: band)
-            let label = update.callsign.isEmpty ? configuration.rotator.automaticSource.rawValue : update.callsign
+            let label = update.stableLabel(
+                previous: rotatorTargetLabel,
+                previousBearing: rotatorTargetBearing,
+                targetBearing: ruledBearing,
+                fallback: configuration.rotator.automaticSource.rawValue
+            )
             setRotatorTarget(bearing: ruledBearing, label: label, source: source, coordinate: gridCoordinate, band: band)
             rotatorFeedStatus = "RUMlog: \(label) · \(Int(ruledBearing.rounded()))°"
 
