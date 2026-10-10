@@ -90,11 +90,14 @@ struct ContentView: View {
                 Button("Reconnect") { model.reconnectRemoteAgent() }
                     .help("Re-establish the Remote Agent HTTPS and WebSocket connection")
             }
-            Button("Monitor") {
+            Button {
                 openWindow(id: "station-monitor")
                 NSApplication.shared.activate(ignoringOtherApps: true)
+            } label: {
+                Label("Open Station Monitor", systemImage: "macwindow")
             }
-            .help("Open the live station monitor as a separate movable window")
+            .keyboardShortcut("m", modifiers: [.command, .shift])
+            .help("Open the live station monitor in a separate movable window (⌘⇧M)")
             Button(model.isRunning ? "Stop" : "Start") {
                 model.isRunning ? model.stop() : model.start()
             }

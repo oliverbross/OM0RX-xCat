@@ -45,15 +45,5 @@ struct OM0RXXCatApp: App {
         }
         .windowResizability(.contentSize)
         .defaultSize(width: 979, height: 540)
-
-        MenuBarExtra {
-            MenuBarView()
-                .environmentObject(model)
-        } label: {
-            Label("OM0RX-xCat", systemImage: model.isStationReady
-                  ? "antenna.radiowaves.left.and.right"
-                  : "exclamationmark.triangle")
-        }
-        .menuBarExtraStyle(.window)
     }
 }
