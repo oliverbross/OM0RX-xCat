@@ -62,7 +62,7 @@ struct MenuBarView: View {
         )
         .background {
             if isDetached {
-                FloatingWindowConfigurator()
+                DetachedWindowConfigurator()
             }
         }
         .preferredColorScheme(.dark)
@@ -185,7 +185,7 @@ struct MenuBarView: View {
                 Button("Undock Monitor") { openDetachedMonitor() }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .help("Open this monitor as a movable always-on-top window")
+                    .help("Open this monitor as a separate movable window")
             }
             Button("Configure") { openMainWindow() }
                 .buttonStyle(.borderedProminent)
@@ -263,7 +263,7 @@ struct MenuBarView: View {
     }
 }
 
-private struct FloatingWindowConfigurator: NSViewRepresentable {
+private struct DetachedWindowConfigurator: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         configure(view)
@@ -277,9 +277,9 @@ private struct FloatingWindowConfigurator: NSViewRepresentable {
     private func configure(_ view: NSView) {
         DispatchQueue.main.async {
             guard let window = view.window else { return }
-            window.level = .floating
+            window.level = .normal
             window.isMovableByWindowBackground = true
-            window.collectionBehavior.insert(.canJoinAllSpaces)
+            window.collectionBehavior.remove(.canJoinAllSpaces)
             window.setFrameAutosaveName("OM0RXStationMonitor")
         }
     }

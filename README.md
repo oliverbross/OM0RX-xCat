@@ -21,8 +21,8 @@ Copyright © 2026 Oliver Bross OM0RX. Licensed under GPL-3.0-only.
 - Compact menu-bar station monitor with live RX/TX state, exact frequency,
   dual VFOs, TX power, SWR, RF drive, detailed KPA/KAT telemetry, route
   alignment, station actions, reconnect, and configuration access.
-- The same station monitor can be undocked into a movable, always-on-top
-  window. Its screen position is restored on later launches.
+- The same station monitor can be undocked into a normal movable window. Its
+  screen position is restored on later launches.
 - Built-in RUMlogNG UDP spot bridge with independent Logbook and Contest rule
   sets, priorities, colours, and marker lifetimes. Spots are sent through the
   authenticated Remote Station Agent and never key PTT or transmit RF.

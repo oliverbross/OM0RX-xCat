@@ -87,7 +87,7 @@ struct ContentView: View {
                 openWindow(id: "station-monitor")
                 NSApplication.shared.activate(ignoringOtherApps: true)
             }
-            .help("Open the live station monitor as a movable always-on-top window")
+            .help("Open the live station monitor as a separate movable window")
             Button(model.isRunning ? "Stop" : "Start") {
                 model.isRunning ? model.stop() : model.start()
             }
