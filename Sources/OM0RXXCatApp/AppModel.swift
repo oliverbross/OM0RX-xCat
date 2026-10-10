@@ -429,7 +429,7 @@ final class AppModel: ObservableObject {
     }
 
     private static func radioStatus(_ snapshot: RadioSnapshot) -> String {
-        var lines = ["A", "B"].map { letter in
+        ["A", "B"].map { letter in
             guard let vfo = snapshot.vfo(letter) else { return "VFO \(letter) · inactive" }
             let frequency = String(format: "%.3f MHz", Double(vfo.frequencyHz) / 1_000_000)
             let roles = [vfo.isReceive ? "RX" : nil, vfo.isTransmit ? "TX" : nil]
@@ -437,11 +437,7 @@ final class AppModel: ObservableObject {
                 .joined(separator: "+")
             return "VFO \(letter) · \(roles.isEmpty ? "standby" : roles) · \(frequency) \(vfo.mode)"
         }
-        if let station = snapshot.remoteStationStatus {
-            lines[0] += " · \(station.kpaSummary) · \(station.katSummary)"
-            lines[1] += " · \(station.routeSummary) · \(station.alarmSummary)"
-        }
-        return lines.joined(separator: "\n")
+        .joined(separator: "\n")
     }
 
     private func ensureLegacyXCATRunning() {

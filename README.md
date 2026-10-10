@@ -46,6 +46,9 @@ full CAT and station control** is selected, xCat forwards every command that the
 agent advertises and presents commissioning, route, and alarm information as
 operator advisories. The Windows agent remains the authoritative hardware and
 station-policy endpoint.
+The main window is organized into compact **Status**, **Activity**, and
+**Configuration** tabs. Each tab fits within the window without a page-level
+scrollbar, and connection health is always shown with both color and text.
 The published v0.2.0 release predates that transport.
 
 On first use:
