@@ -74,6 +74,13 @@ struct RemoteAgentTests {
         #expect(snapshot.remoteStationStatus?.routeSummary == "Route 17m Beam")
         #expect(snapshot.remoteStationStatus?.alarmSummary == "ALARM clear")
         #expect(snapshot.remoteStationStatus?.allowedActions.contains("tune") == true)
+        #expect(snapshot.remoteStationStatus?.interlockState == "READY")
+        #expect(snapshot.remoteStationStatus?.txPowerWatts == 0)
+        #expect(snapshot.remoteStationStatus?.swr == 1.25)
+        #expect(snapshot.remoteStationStatus?.swrIsLive == true)
+        #expect(snapshot.remoteStationStatus?.kpaDetailPrimary.contains("OUT 0W") == true)
+        #expect(snapshot.remoteStationStatus?.katDetailPrimary.contains("SWR 1.25") == true)
+        #expect(snapshot.remoteStationStatus?.routeDetail == "FLEX ANT1 → KPA500 → KAT500 → Beam")
     }
 
     @Test func reportsStaleUncommissionedAlarmStateAsAdvisories() throws {
@@ -197,6 +204,7 @@ struct RemoteAgentTests {
           "station_bound": true,
           "station_name": "Maestro",
           "mox": false,
+          "interlock_state": "READY",
           "cw_speed": 28,
           "drive": 25,
           "rit_on": true,
@@ -211,14 +219,15 @@ struct RemoteAgentTests {
           "transmit": {"index_letter": "B", "frequency_hz": 18153000, "mode": "USB"}
         },
         "elecraft": {
-          "kpa500": {"enabled": true, "connected": true, "operate": true, "fault": "0"},
-          "kat500": {"enabled": true, "connected": true, "antenna": 1, "bypass": false, "tuning": false, "fault": "0"}
+          "kpa500": {"enabled": true, "connected": true, "operate": true, "band": "17m", "output_power_w": 0, "swr": 0, "swr_live": false, "temperature_c": 30, "voltage": 68.7, "current": 0, "fault": "0", "firmware": "01.54", "quality": "good"},
+          "kat500": {"enabled": true, "connected": true, "mode": "auto", "band": "17m", "antenna": 1, "bypass": false, "tuning": false, "fault": "0", "forward_adc": 0, "reflected_adc": 0, "swr_sample": 1.25, "swr_live": false, "swr_valid": true, "amp_key_interrupted": false, "firmware": "02.16", "quality": "good"}
         },
         "station": {
           "commissioned": true,
           "coordinator_state": "route_verified",
           "allowed_actions": ["standby", "operate", "tune"],
           "route": {"id": "17m-flex-ant1-kat-ant1", "band": "17m", "flex_tx_ant": "ANT1", "kat_antenna": 1, "antenna_name": "Beam", "amplifier_allowed": true, "active_drive_w": 25},
+          "path": {"band": "17m", "alignment": "confirmed", "route_label": "FLEX ANT1 → KPA500 → KAT500 → Beam"},
           "issues": [],
           "alarms": {"active_count": 0, "items": []}
         },

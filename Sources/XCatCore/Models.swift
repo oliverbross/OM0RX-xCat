@@ -66,6 +66,17 @@ public struct RemoteStationStatus: Equatable, Sendable {
     public var routeSummary: String
     public var alarmSummary: String
     public var alarmMessages: [String]
+    public var band: String
+    public var routeAlignment: String
+    public var interlockState: String
+    public var txPowerWatts: Double?
+    public var swr: Double?
+    public var swrIsLive: Bool
+    public var kpaDetailPrimary: String
+    public var kpaDetailSecondary: String
+    public var katDetailPrimary: String
+    public var katDetailSecondary: String
+    public var routeDetail: String
 
     public init(
         revision: Int = 0,
@@ -81,7 +92,18 @@ public struct RemoteStationStatus: Equatable, Sendable {
         katSummary: String = "KAT unknown",
         routeSummary: String = "Route unknown",
         alarmSummary: String = "ALARM unknown",
-        alarmMessages: [String] = []
+        alarmMessages: [String] = [],
+        band: String = "--",
+        routeAlignment: String = "unknown",
+        interlockState: String = "--",
+        txPowerWatts: Double? = nil,
+        swr: Double? = nil,
+        swrIsLive: Bool = false,
+        kpaDetailPrimary: String = "KPA500 --",
+        kpaDetailSecondary: String = "Telemetry unavailable",
+        katDetailPrimary: String = "KAT500 --",
+        katDetailSecondary: String = "Telemetry unavailable",
+        routeDetail: String = "Route unavailable"
     ) {
         self.revision = revision
         self.radioKnown = radioKnown
@@ -97,6 +119,17 @@ public struct RemoteStationStatus: Equatable, Sendable {
         self.routeSummary = routeSummary
         self.alarmSummary = alarmSummary
         self.alarmMessages = alarmMessages
+        self.band = band
+        self.routeAlignment = routeAlignment
+        self.interlockState = interlockState
+        self.txPowerWatts = txPowerWatts
+        self.swr = swr
+        self.swrIsLive = swrIsLive
+        self.kpaDetailPrimary = kpaDetailPrimary
+        self.kpaDetailSecondary = kpaDetailSecondary
+        self.katDetailPrimary = katDetailPrimary
+        self.katDetailSecondary = katDetailSecondary
+        self.routeDetail = routeDetail
     }
 
 }

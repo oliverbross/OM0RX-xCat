@@ -18,6 +18,9 @@ Copyright © 2026 Oliver Bross OM0RX. Licensed under GPL-3.0-only.
   HTTPS and WebSocket, with the bearer token stored in macOS Keychain.
 - Menu-bar station widget with live VFO, KPA500, KAT500, route, commissioning,
   blocker, and alarm state.
+- Compact menu-bar station monitor with live RX/TX state, exact frequency,
+  dual VFOs, TX power, SWR, RF drive, detailed KPA/KAT telemetry, route
+  alignment, station actions, reconnect, and configuration access.
 - Built-in RUMlogNG UDP spot bridge with independent Logbook and Contest rule
   sets, priorities, colours, and marker lifetimes. Spots are sent through the
   authenticated Remote Station Agent and never key PTT or transmit RF.

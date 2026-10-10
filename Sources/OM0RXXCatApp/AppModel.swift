@@ -10,6 +10,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var events: [String] = []
     @Published private(set) var isRunning = false
     @Published private(set) var isRadioConnected = false
+    @Published private(set) var radioSnapshot: RadioSnapshot?
+    @Published private(set) var lastSnapshotAt: Date?
     @Published var smartLinkPassword = ""
     @Published var remoteAgentToken = ""
     @Published private(set) var remoteStationStatus: RemoteStationStatus?
@@ -128,6 +130,8 @@ final class AppModel: ObservableObject {
                     onSnapshot: { [weak self] snapshot in
                         Task { @MainActor in
                             self?.isRadioConnected = snapshot.isConnected
+                            self?.radioSnapshot = snapshot
+                            self?.lastSnapshotAt = Date()
                             self?.remoteStationStatus = snapshot.remoteStationStatus
                             self?.status = Self.radioStatus(snapshot)
                             self?.refreshSpotBridgeStatus()
@@ -159,6 +163,8 @@ final class AppModel: ObservableObject {
                     onSnapshot: { [weak self] snapshot in
                         Task { @MainActor in
                             self?.isRadioConnected = snapshot.isConnected
+                            self?.radioSnapshot = snapshot
+                            self?.lastSnapshotAt = Date()
                             if snapshot.isConnected { self?.status = Self.radioStatus(snapshot) }
                         }
                     }
@@ -183,6 +189,8 @@ final class AppModel: ObservableObject {
                     onSnapshot: { [weak self] snapshot in
                         Task { @MainActor in
                             self?.isRadioConnected = snapshot.isConnected
+                            self?.radioSnapshot = snapshot
+                            self?.lastSnapshotAt = Date()
                             if snapshot.isConnected {
                                 self?.status = Self.radioStatus(snapshot)
                             }
@@ -213,6 +221,8 @@ final class AppModel: ObservableObject {
                     onSnapshot: { [weak self] snapshot in
                         Task { @MainActor in
                             self?.isRadioConnected = snapshot.isConnected
+                            self?.radioSnapshot = snapshot
+                            self?.lastSnapshotAt = Date()
                             if snapshot.isConnected { self?.status = Self.radioStatus(snapshot) }
                         }
                     },
@@ -243,6 +253,8 @@ final class AppModel: ObservableObject {
                     onSnapshot: { [weak self] snapshot in
                         Task { @MainActor in
                             self?.isRadioConnected = snapshot.isConnected
+                            self?.radioSnapshot = snapshot
+                            self?.lastSnapshotAt = Date()
                             self?.status = Self.radioStatus(snapshot)
                         }
                     }
@@ -341,6 +353,8 @@ final class AppModel: ObservableObject {
         radio = nil
         isRunning = false
         isRadioConnected = false
+        radioSnapshot = nil
+        lastSnapshotAt = nil
         remoteStationStatus = nil
         remoteConfigurationLoaded = false
         remoteConfigurationStatus = "Connect to load station settings"

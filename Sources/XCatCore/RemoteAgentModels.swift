@@ -259,6 +259,19 @@ enum RemoteAgentStateDecoder {
         let kpa = state.elecraft?.kpa500
         let kat = state.elecraft?.kat500
         let route = station.route
+        let path = station.path
+        let kpaSWRLive = kpa?.swrLive == true
+        let katSWRLive = kat?.swrLive == true
+        let katSWRValid = kat?.swrValid == true
+        let displayedSWR = kpaSWRLive ? kpa?.swr : kat?.swrSample
+        let displayedSWRIsLive = kpaSWRLive || katSWRLive || katSWRValid
+        let txPowerWatts: Double? = if radio.mox != true {
+            0
+        } else if kpa?.operate == true, let output = kpa?.outputPowerW {
+            output
+        } else {
+            radio.drive
+        }
         let status = RemoteStationStatus(
             revision: state.revision,
             radioKnown: radioKnown,
@@ -273,7 +286,18 @@ enum RemoteAgentStateDecoder {
             katSummary: katSummary(kat),
             routeSummary: routeSummary(route),
             alarmSummary: activeAlarmCount == 0 ? "ALARM clear" : "ALARM \(activeAlarmCount)",
-            alarmMessages: activeAlarms.map { $0.message ?? $0.code ?? "Active station alarm" }
+            alarmMessages: activeAlarms.map { $0.message ?? $0.code ?? "Active station alarm" },
+            band: path?.band ?? route?.band ?? kpa?.band ?? kat?.band ?? "--",
+            routeAlignment: path?.alignment ?? "unknown",
+            interlockState: radio.interlockState ?? "--",
+            txPowerWatts: txPowerWatts,
+            swr: displayedSWR,
+            swrIsLive: displayedSWRIsLive,
+            kpaDetailPrimary: kpaDetailPrimary(kpa),
+            kpaDetailSecondary: kpaDetailSecondary(kpa),
+            katDetailPrimary: katDetailPrimary(kat),
+            katDetailSecondary: katDetailSecondary(kat),
+            routeDetail: path?.routeLabel ?? routeSummary(route)
         )
         let fallbackFrequency = radio.resolvedFrequencyHz ?? 0
         let snapshot = RadioSnapshot(
@@ -315,6 +339,36 @@ enum RemoteAgentStateDecoder {
         let routeName = route.band ?? route.id ?? "unknown"
         let antenna = route.antennaName ?? route.flexTXAntenna ?? ""
         return "Route \(routeName)\(antenna.isEmpty ? "" : " \(antenna)")"
+    }
+
+    private static func compactNumber(_ value: Double?, decimals: Int = 1, suffix: String = "") -> String {
+        guard let value else { return "--" }
+        return String(format: "%.*f%@", decimals, value, suffix)
+    }
+
+    private static func kpaDetailPrimary(_ state: KPADTO?) -> String {
+        guard let state else { return "KPA500 --" }
+        let operating = state.operate == true ? "OPERATE" : "STBY"
+        return "KPA500  \(operating)  |  \(state.band ?? "--")  |  OUT \(compactNumber(state.outputPowerW, decimals: 0, suffix: "W"))  |  SWR \(compactNumber(state.swr, decimals: 2))"
+    }
+
+    private static func kpaDetailSecondary(_ state: KPADTO?) -> String {
+        guard let state else { return "Telemetry unavailable" }
+        return "TEMP \(compactNumber(state.temperatureC, decimals: 0, suffix: "°C"))  |  \(compactNumber(state.voltage, suffix: "V")) / \(compactNumber(state.current, suffix: "A"))  |  FAULT \(state.fault ?? "--")  |  FW \(state.firmware ?? "--")  |  \(state.quality ?? "--")"
+    }
+
+    private static func katDetailPrimary(_ state: KATDTO?) -> String {
+        guard let state else { return "KAT500 --" }
+        let antenna = state.antenna.map { "ANT\($0)" } ?? "ANT--"
+        let readiness = state.tuning == true ? "TUNING" : "READY"
+        return "KAT500  \((state.mode ?? "--").uppercased())  |  \(state.band ?? "--")  |  \(antenna)  |  \(readiness)  |  SWR \(compactNumber(state.swrSample, decimals: 2))"
+    }
+
+    private static func katDetailSecondary(_ state: KATDTO?) -> String {
+        guard let state else { return "Telemetry unavailable" }
+        let match = state.bypass == true ? "BYPASS" : "MATCH"
+        let key = state.ampKeyInterrupted == true ? "KEY OPEN" : "KEY OK"
+        return "FWD/REF \(compactNumber(state.forwardADC, decimals: 0))/\(compactNumber(state.reflectedADC, decimals: 0))  |  \(match)  |  \(key)  |  FAULT \(state.fault ?? "--")  |  FW \(state.firmware ?? "--")  |  \(state.quality ?? "--")"
     }
 }
 
@@ -372,6 +426,7 @@ private struct RadioDTO: Decodable {
     var mox: Bool?
     var cwSpeed: Int?
     var drive: Double?
+    var interlockState: String?
     var ritEnabled: Bool?
     var ritOffsetHz: Int?
     var xitEnabled: Bool?
@@ -384,6 +439,7 @@ private struct RadioDTO: Decodable {
 
     enum CodingKeys: String, CodingKey {
         case connected, known, stale, frequency, mode, mox, vfos, transmit, drive
+        case interlockState = "interlock_state"
         case stationBound = "station_bound"
         case stationName = "station_name"
         case frequencyHz = "frequency_hz"
@@ -435,15 +491,27 @@ private struct StationDTO: Decodable {
     var coordinatorState: String?
     var allowedActions: [String]?
     var route: RouteDTO?
+    var path: PathDTO?
     var issues: [IssueDTO]?
     var alarms: AlarmsDTO?
 
     init() {}
 
     enum CodingKeys: String, CodingKey {
-        case commissioned, route, issues, alarms
+        case commissioned, route, path, issues, alarms
         case coordinatorState = "coordinator_state"
         case allowedActions = "allowed_actions"
+    }
+}
+
+private struct PathDTO: Decodable {
+    let band: String?
+    let alignment: String?
+    let routeLabel: String?
+
+    enum CodingKeys: String, CodingKey {
+        case band, alignment
+        case routeLabel = "route_label"
     }
 }
 
@@ -498,6 +566,22 @@ private struct KPADTO: Decodable {
     let connected: Bool?
     let operate: Bool?
     let fault: String?
+    let band: String?
+    let outputPowerW: Double?
+    let swr: Double?
+    let swrLive: Bool?
+    let temperatureC: Double?
+    let voltage: Double?
+    let current: Double?
+    let firmware: String?
+    let quality: String?
+
+    enum CodingKeys: String, CodingKey {
+        case enabled, connected, operate, fault, band, swr, voltage, current, firmware, quality
+        case outputPowerW = "output_power_w"
+        case swrLive = "swr_live"
+        case temperatureC = "temperature_c"
+    }
 }
 
 private struct KATDTO: Decodable {
@@ -507,6 +591,26 @@ private struct KATDTO: Decodable {
     let bypass: Bool?
     let tuning: Bool?
     let fault: String?
+    let mode: String?
+    let band: String?
+    let forwardADC: Double?
+    let reflectedADC: Double?
+    let swrSample: Double?
+    let swrLive: Bool?
+    let swrValid: Bool?
+    let ampKeyInterrupted: Bool?
+    let firmware: String?
+    let quality: String?
+
+    enum CodingKeys: String, CodingKey {
+        case enabled, connected, antenna, bypass, tuning, fault, mode, band, firmware, quality
+        case forwardADC = "forward_adc"
+        case reflectedADC = "reflected_adc"
+        case swrSample = "swr_sample"
+        case swrLive = "swr_live"
+        case swrValid = "swr_valid"
+        case ampKeyInterrupted = "amp_key_interrupted"
+    }
 }
 
 private struct CapabilitiesDTO: Decodable {

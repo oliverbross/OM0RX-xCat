@@ -70,3 +70,26 @@ bind settings and bearer token, and writes the file atomically. A successful
 save requires a controlled Windows agent restart before the new configuration
 is active. Saving settings does not itself send a station-control command or
 transmit RF.
+
+## macOS verification — 2026-10-10
+
+- The Windows `codex/remote-agent-flex-spots` history through reported tip
+  `4bf518f1971a740b236f0a062c1412021018fbe1` was fetched and preserved by a
+  normal merge. No Windows work was reset or overwritten.
+- The installed `/Applications/OM0RX-xCat.app` is source build 0.4.0 (6), is
+  validly Developer ID signed, and reconnects to the authenticated HTTPS and
+  WebSocket agent.
+- Live readback showed FLEX VFO A on approximately 21.049 MHz CW, KPA500 in
+  standby, KAT500 on ANT1, a confirmed 15m route, and no active alarm.
+- The Station tab loaded the complete Windows configuration and renders FLEX,
+  KPA/KAT, tune, antenna-name, and all 11 per-band routing/drive rows on one
+  screen without a page scrollbar.
+- RUMlog delivered a real `DL7PIA` 10.116 MHz spot to xCat. This exposed a
+  Windows driver defect: it sent six-digit RGB although the SmartSDR Spot API
+  requires ARGB, and it reported success without matching the radio response.
+  The shared Windows branch now converts RGB to opaque ARGB and requires the
+  matching zero-success acknowledgement.
+- The complete Swift suite passed: 35 tests, 0 failures, across 7 suites.
+- Final Maestro display acceptance remains pending only on deployment and a
+  controlled restart of the updated Windows agent. No RF transmission was
+  used during this verification.
