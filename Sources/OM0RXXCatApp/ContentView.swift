@@ -522,6 +522,36 @@ struct ContentView: View {
         } else {
             VStack(alignment: .leading, spacing: Layout.compact) {
                 HStack(alignment: .top, spacing: Layout.standard) {
+                    GroupBox("FLEX-8400") {
+                        Grid(alignment: .leading, horizontalSpacing: Layout.compact, verticalSpacing: 6) {
+                            GridRow {
+                                Text("Station").foregroundStyle(.secondary)
+                                TextField("Maestro", text: $model.remoteConfiguration.flex.stationName)
+                                    .frame(width: 118)
+                            }
+                            GridRow {
+                                Text("Host").foregroundStyle(.secondary)
+                                TextField("Radio IP", text: $model.remoteConfiguration.flex.host)
+                                    .frame(width: 118)
+                            }
+                            GridRow {
+                                Text("TCP / slice").foregroundStyle(.secondary)
+                                HStack(spacing: Layout.tight) {
+                                    TextField("Port", value: $model.remoteConfiguration.flex.port, format: .number)
+                                        .frame(width: 70)
+                                    TextField("Slice", value: $model.remoteConfiguration.flex.sliceID, format: .number)
+                                        .frame(width: 44)
+                                }
+                            }
+                            GridRow {
+                                Toggle("Enforce antenna policy", isOn: $model.remoteConfiguration.policy.flexAntenna.enabled)
+                                    .gridCellColumns(2)
+                            }
+                        }
+                        .padding(Layout.tight)
+                    }
+                    .frame(maxWidth: .infinity)
+
                     GroupBox("Hardware") {
                         Grid(alignment: .leading, horizontalSpacing: Layout.compact, verticalSpacing: 6) {
                             GridRow {
