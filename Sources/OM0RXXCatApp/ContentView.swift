@@ -15,7 +15,7 @@ struct ContentView: View {
                 }
                 Spacer()
                 Circle()
-                    .fill(model.isRadioConnected ? Color.green : (model.isRunning ? Color.orange : Color.secondary))
+                    .fill(model.isStationReady ? Color.green : (model.isRunning ? Color.orange : Color.secondary))
                     .frame(width: 12, height: 12)
                 Text(model.status)
                     .font(.headline)
@@ -43,6 +43,16 @@ struct ContentView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                if model.configuration.connectionKind == .remoteAgent {
+                    TextField("Remote Agent HTTPS URL", text: $model.configuration.remoteAgentBaseURL)
+                        .textContentType(.URL)
+                    SecureField("Remote Agent bearer token", text: $model.remoteAgentToken)
+                        .textContentType(.password)
+                    Text("The bearer token is stored only in macOS Keychain. Agent mode never sends route, PTT, tune, CWX, or power writes directly to SmartLink.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("Forget Saved Agent Token") { model.forgetRemoteAgentToken() }
+                }
                 if model.configuration.connectionKind == .smartLink {
                     TextField("SmartLink email", text: $model.configuration.smartLinkEmail)
                         .textContentType(.username)
@@ -57,7 +67,8 @@ struct ContentView: View {
                         Button("Reset Radio Certificate Pin") { model.resetSmartLinkCertificatePin() }
                     }
                 }
-                if model.configuration.connectionKind != .legacyXCAT {
+                if model.configuration.connectionKind != .legacyXCAT,
+                   model.configuration.connectionKind != .remoteAgent {
                     HStack {
                         TextField("Station", text: $model.configuration.stationName)
                         TextField("Slice", text: $model.configuration.sliceLetter)
@@ -88,6 +99,10 @@ struct ContentView: View {
                 .keyboardShortcut(.defaultAction)
             }
 
+            if model.configuration.connectionKind == .remoteAgent {
+                remoteStationControls
+            }
+
             GroupBox("Activity") {
                 ScrollView {
                     Text(model.events.suffix(80).joined(separator: "\n"))
@@ -100,5 +115,52 @@ struct ContentView: View {
         }
         .padding(22)
         .frame(minWidth: 680, minHeight: 600)
+    }
+
+    private var remoteStationControls: some View {
+        GroupBox("Remote station") {
+            VStack(alignment: .leading, spacing: 10) {
+                if let station = model.remoteStationStatus {
+                    Text("\(station.kpaSummary) · \(station.katSummary) · \(station.routeSummary) · \(station.alarmSummary)")
+                        .font(.system(.caption, design: .monospaced))
+                    Text(station.hazardousWritesAllowed
+                         ? "Guarded writes available"
+                         : "TX/route locked: \(station.inhibitors.joined(separator: "; "))")
+                        .font(.caption)
+                        .foregroundStyle(station.hazardousWritesAllowed ? Color.secondary : Color.orange)
+                        .lineLimit(3)
+                } else {
+                    Text("Waiting for authoritative agent state")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack {
+                    Toggle("RIT", isOn: $model.remoteRITEnabled)
+                    TextField("Hz", value: $model.remoteRITOffsetHz, format: .number)
+                        .frame(width: 90)
+                    Button("Apply RIT") { model.applyRemoteRIT() }
+                    Toggle("XIT", isOn: $model.remoteXITEnabled)
+                    TextField("Hz", value: $model.remoteXITOffsetHz, format: .number)
+                        .frame(width: 90)
+                    Button("Apply XIT") { model.applyRemoteXIT() }
+                }
+                .disabled(!model.isRadioConnected)
+
+                HStack {
+                    TextField("RF power W", value: $model.remoteRFPowerWatts, format: .number)
+                        .frame(width: 120)
+                    Button("Apply Policy Power") { model.applyRemoteRFPower() }
+                    Spacer()
+                    ForEach(RemoteStationAction.allCases, id: \.self) { action in
+                        Button(action.rawValue.capitalized) { model.performRemoteStationAction(action) }
+                            .disabled(!model.remoteActionAllowed(action))
+                    }
+                }
+                .disabled(!model.isRunning)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(8)
+        }
     }
 }

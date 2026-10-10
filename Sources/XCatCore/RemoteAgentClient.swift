@@ -1,0 +1,356 @@
+import Foundation
+
+public actor RemoteAgentClient: RadioControlling {
+    public typealias StateHandler = @Sendable (RadioConnectionState, String) -> Void
+    public typealias SnapshotHandler = @Sendable (RadioSnapshot) -> Void
+
+    private let endpoint: RemoteAgentEndpoint
+    private let token: String
+    private let session: URLSession
+    private let onState: StateHandler
+    private let onSnapshot: SnapshotHandler
+
+    private var value = RadioSnapshot(
+        isConnected: false,
+        station: "Remote Agent",
+        remoteStationStatus: RemoteStationStatus()
+    )
+    private var wordsPerMinute = 25
+    private var shouldRun = false
+    private var generation = 0
+    private var reconnectAttempt = 0
+    private var webSocket: URLSessionWebSocketTask?
+    private var streamTask: Task<Void, Never>?
+    private var watchdogTask: Task<Void, Never>?
+    private var reconnectTask: Task<Void, Never>?
+    private var lastStreamMessage = Date.distantPast
+
+    public init(
+        baseURL: String,
+        token: String,
+        session: URLSession = .shared,
+        onState: @escaping StateHandler = { _, _ in },
+        onSnapshot: @escaping SnapshotHandler = { _ in }
+    ) throws {
+        endpoint = try RemoteAgentEndpoint(baseURL)
+        let trimmedToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedToken.isEmpty else {
+            throw XCatError.server("Enter the Remote Agent bearer token.")
+        }
+        self.token = trimmedToken
+        self.session = session
+        self.onState = onState
+        self.onSnapshot = onSnapshot
+    }
+
+    public func start() {
+        guard !shouldRun else { return }
+        shouldRun = true
+        reconnectAttempt = 0
+        Task { await connect() }
+    }
+
+    public func stop() {
+        shouldRun = false
+        generation += 1
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        streamTask?.cancel()
+        streamTask = nil
+        watchdogTask?.cancel()
+        watchdogTask = nil
+        webSocket?.cancel(with: .goingAway, reason: nil)
+        webSocket = nil
+        markDisconnected("Stopped")
+        transition(.stopped, "Stopped")
+    }
+
+    public func snapshot() -> RadioSnapshot { value }
+    public func primaryFrequency() -> Int64? { value.vfo("A")?.frequencyHz }
+    public func secondaryFrequency() -> Int64? { value.vfo("B")?.frequencyHz }
+    public func cwSpeed() -> Int { wordsPerMinute }
+
+    public func setPrimaryFrequency(_ frequencyHz: Int64) async throws {
+        guard frequencyHz > 0 else { throw XCatError.invalidFrequency }
+        try await execute(.frequency(frequencyHz, vfo: "A"))
+    }
+
+    public func setFrequency(_ frequencyHz: Int64) async throws {
+        guard frequencyHz > 0 else { throw XCatError.invalidFrequency }
+        try await execute(.frequency(frequencyHz, vfo: receiveVFO()))
+    }
+
+    public func setSecondaryFrequency(_ frequencyHz: Int64) async throws {
+        guard frequencyHz > 0 else { throw XCatError.invalidFrequency }
+        try await execute(.frequency(frequencyHz, vfo: "B"))
+    }
+
+    public func setMode(_ mode: String) async throws {
+        let normalized = mode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard !normalized.isEmpty else { throw XCatError.invalidMode }
+        try await execute(.mode(normalized, vfo: receiveVFO()))
+    }
+
+    public func setTransmit(_ enabled: Bool) async throws {
+        try await execute(.ptt(enabled))
+    }
+
+    public func setTransmit(_ mode: CATTransmitMode) async throws {
+        switch mode {
+        case .microphone, .data:
+            try await execute(.ptt(true))
+        case .tune:
+            try await performStationAction(.tune)
+        }
+    }
+
+    public func setSplitTransmit(_ enabled: Bool) async throws {
+        let frequency = enabled ? value.vfo("B")?.frequencyHz : nil
+        try await execute(.split(enabled, txFrequencyHz: frequency))
+    }
+
+    public func setReceiveVFO(_ vfo: Int) async throws {
+        guard vfo == 0 || vfo == 1 else { throw XCatError.unsupported }
+        try await execute(.receiveVFO(vfo == 0 ? "A" : "B"))
+    }
+
+    public func setCWSpeed(_ wordsPerMinute: Int) async throws {
+        guard (5...100).contains(wordsPerMinute) else {
+            throw XCatError.server("CW speed must be 5 through 100 WPM.")
+        }
+        try await execute(.cwSpeed(wordsPerMinute))
+    }
+
+    public func sendCW(_ text: String) async throws {
+        guard !text.isEmpty,
+              text.count <= 128,
+              !text.contains("|"),
+              text.unicodeScalars.allSatisfy({ (32...126).contains($0.value) }) else {
+            throw XCatError.server("CW text must contain 1 through 128 printable ASCII characters without |.")
+        }
+        try await execute(.sendCW(text))
+    }
+
+    public func clearCW() async throws {
+        try await execute(.clearCW)
+    }
+
+    public func setRIT(enabled: Bool, offsetHz: Int, vfo: String?) async throws {
+        guard (-9_999...9_999).contains(offsetHz) else {
+            throw XCatError.server("RIT offset must be between -9999 and 9999 Hz.")
+        }
+        try await execute(.offset(
+            kind: "set_rit",
+            enabled: enabled,
+            offsetHz: offsetHz,
+            vfo: normalizedVFO(vfo) ?? receiveVFO()
+        ))
+    }
+
+    public func setXIT(enabled: Bool, offsetHz: Int, vfo: String?) async throws {
+        guard (-9_999...9_999).contains(offsetHz) else {
+            throw XCatError.server("XIT offset must be between -9999 and 9999 Hz.")
+        }
+        try await execute(.offset(
+            kind: "set_xit",
+            enabled: enabled,
+            offsetHz: offsetHz,
+            vfo: normalizedVFO(vfo) ?? receiveVFO()
+        ))
+    }
+
+    public func setRFPower(_ watts: Int) async throws {
+        guard watts > 0 else { throw XCatError.server("RF power must be greater than zero.") }
+        try await execute(.rfPower(watts))
+    }
+
+    public func performStationAction(_ action: RemoteStationAction) async throws {
+        guard value.remoteStationStatus?.allows(action) == true else {
+            throw XCatError.server("The Remote Agent does not currently allow station \(action.rawValue).")
+        }
+        try await execute(.station(action))
+    }
+
+    private func connect() async {
+        guard shouldRun else { return }
+        generation += 1
+        let currentGeneration = generation
+        transition(.connecting, "Connecting to Remote Station Agent")
+        do {
+            let decoded = try await fetchState()
+            guard currentGeneration == generation, shouldRun else { return }
+            apply(decoded)
+            reconnectAttempt = 0
+            transition(.ready, "Remote Station Agent connected")
+            openStream(generation: currentGeneration)
+        } catch {
+            connectionFailed(error.localizedDescription, generation: currentGeneration)
+        }
+    }
+
+    private func fetchState() async throws -> RemoteAgentDecodedState {
+        let request = endpoint.httpRequest(path: "/api/v1/state", token: token)
+        let (data, response) = try await session.data(for: request)
+        try Self.validate(response: response, data: data)
+        return try RemoteAgentStateDecoder.stateResponse(data)
+    }
+
+    private func openStream(generation currentGeneration: Int) {
+        let socket = session.webSocketTask(with: endpoint.webSocketRequest(token: token))
+        webSocket = socket
+        lastStreamMessage = Date()
+        socket.resume()
+        streamTask?.cancel()
+        streamTask = Task { [weak self] in
+            await self?.receiveStream(socket, generation: currentGeneration)
+        }
+        watchdogTask?.cancel()
+        watchdogTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled else { return }
+                await self?.checkStreamFreshness(generation: currentGeneration)
+            }
+        }
+    }
+
+    private func receiveStream(_ socket: URLSessionWebSocketTask, generation currentGeneration: Int) async {
+        do {
+            while shouldRun, currentGeneration == generation, !Task.isCancelled {
+                let message = try await socket.receive()
+                lastStreamMessage = Date()
+                let data: Data
+                switch message {
+                case let .data(value): data = value
+                case let .string(value): data = Data(value.utf8)
+                @unknown default: continue
+                }
+                if let decoded = try RemoteAgentStateDecoder.streamMessage(data) { apply(decoded) }
+            }
+        } catch {
+            connectionFailed("Remote Agent stream interrupted: \(error.localizedDescription)", generation: currentGeneration)
+        }
+    }
+
+    private func checkStreamFreshness(generation currentGeneration: Int) {
+        guard currentGeneration == generation, shouldRun else { return }
+        if Date().timeIntervalSince(lastStreamMessage) > 35 {
+            connectionFailed("Remote Agent stream heartbeat timed out", generation: currentGeneration)
+        }
+    }
+
+    private func execute(_ command: RemoteAgentCommand) async throws {
+        guard shouldRun else { throw XCatError.notConnected }
+        guard value.remoteStationStatus?.supportedCommands.contains(command.name) == true else {
+            throw XCatError.server("Remote Agent does not advertise \(command.name).")
+        }
+        if command.requiresSafeStation {
+            guard webSocket != nil, Date().timeIntervalSince(lastStreamMessage) <= 25 else {
+                throw XCatError.server("Remote Agent write inhibited: state stream is stale")
+            }
+            guard let status = value.remoteStationStatus, status.hazardousWritesAllowed else {
+                let reason = value.remoteStationStatus?.inhibitors.first ?? "Agent safety state is unavailable"
+                throw XCatError.server("Remote Agent write inhibited: \(reason)")
+            }
+        }
+        let requestID = "xcat-\(UUID().uuidString.lowercased())"
+        let request = try RemoteAgentRequestBuilder.commandRequest(
+            endpoint: endpoint,
+            token: token,
+            requestID: requestID,
+            command: command
+        )
+        var lastError: (any Error)?
+        for attempt in 0..<2 {
+            do {
+                let (data, response) = try await session.data(for: request)
+                try Self.validate(response: response, data: data)
+                if let decoded = try RemoteAgentStateDecoder.commandResponse(data) { apply(decoded) }
+                return
+            } catch {
+                lastError = error
+                if attempt == 0 {
+                    try? await Task.sleep(for: .milliseconds(200))
+                    continue
+                }
+            }
+        }
+        throw lastError ?? XCatError.server("Remote Agent command failed.")
+    }
+
+    private func apply(_ decoded: RemoteAgentDecodedState) {
+        value = decoded.snapshot
+        wordsPerMinute = decoded.cwSpeed
+        onSnapshot(value)
+    }
+
+    private func connectionFailed(_ message: String, generation currentGeneration: Int) {
+        guard currentGeneration == generation else { return }
+        generation += 1
+        streamTask?.cancel()
+        streamTask = nil
+        watchdogTask?.cancel()
+        watchdogTask = nil
+        webSocket?.cancel(with: .goingAway, reason: nil)
+        webSocket = nil
+        markDisconnected(message)
+        guard shouldRun else {
+            transition(.stopped, "Stopped")
+            return
+        }
+        scheduleReconnect(message)
+    }
+
+    private func scheduleReconnect(_ message: String) {
+        reconnectTask?.cancel()
+        reconnectAttempt += 1
+        let base = min(pow(2.0, Double(max(0, reconnectAttempt - 1))), 30.0)
+        let delay = base + Double.random(in: 0...(base * 0.25))
+        transition(.retrying, "\(message). Retrying in \(String(format: "%.1f", delay)) s")
+        reconnectTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+            await self?.connect()
+        }
+    }
+
+    private func markDisconnected(_ reason: String) {
+        value.isConnected = false
+        value.isTransmitting = false
+        if var status = value.remoteStationStatus {
+            status.radioKnown = false
+            status.radioStale = true
+            status.inhibitors = [reason] + status.inhibitors.filter { $0 != reason }
+            value.remoteStationStatus = status
+        }
+        onSnapshot(value)
+    }
+
+    private func receiveVFO() -> String {
+        value.vfo("B")?.isReceive == true ? "B" : "A"
+    }
+
+    private func normalizedVFO(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        return normalized == "A" || normalized == "B" ? normalized : nil
+    }
+
+    private func transition(_ state: RadioConnectionState, _ description: String) {
+        onState(state, description)
+    }
+
+    private static func validate(response: URLResponse, data: Data) throws {
+        guard let http = response as? HTTPURLResponse else {
+            throw XCatError.server("Remote Agent returned an invalid response.")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let error = object?["error"] as? [String: Any]
+            let detail = object?["detail"] as? String
+            let message = error?["message"] as? String ?? detail
+                ?? "Remote Agent request failed (HTTP \(http.statusCode))."
+            throw XCatError.server(message)
+        }
+    }
+}

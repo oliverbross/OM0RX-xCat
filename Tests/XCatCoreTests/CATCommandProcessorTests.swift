@@ -102,4 +102,37 @@ struct CATCommandProcessorTests {
         #expect(await processor.handle("FT") == "FT1;")
         #expect(await processor.handle("IF") == "IF00018147000     +0000000000200000010;")
     }
+
+    @Test func mapsKenwoodRITXITAndPolicyPower() async {
+        let radio = SimulatedRadio(snapshot: RadioSnapshot(
+            frequencyHz: 18_147_000,
+            mode: "USB",
+            vfos: [RadioVFO(
+                letter: "A",
+                frequencyHz: 18_147_000,
+                mode: "USB",
+                isReceive: true,
+                isTransmit: true,
+                ritEnabled: true,
+                ritOffsetHz: 250,
+                xitEnabled: false,
+                xitOffsetHz: -100
+            )],
+            rfPowerWatts: 25
+        ))
+        let safeProcessor = CATCommandProcessor(radio: radio)
+        #expect(await safeProcessor.handle("RT") == "RT1;")
+        #expect(await safeProcessor.handle("XT") == "XT0;")
+        #expect(await safeProcessor.handle("PC") == "PC025;")
+        #expect(await safeProcessor.handle("RT0") == nil)
+        #expect(await safeProcessor.handle("XT1") == "?;")
+        #expect(await safeProcessor.handle("PC030") == "?;")
+
+        let enabledProcessor = CATCommandProcessor(radio: radio, allowTransmit: true)
+        #expect(await enabledProcessor.handle("XT1") == nil)
+        #expect(await enabledProcessor.handle("PC030") == nil)
+        #expect(await enabledProcessor.handle("RT") == "RT0;")
+        #expect(await enabledProcessor.handle("XT") == "XT1;")
+        #expect(await enabledProcessor.handle("PC") == "PC030;")
+    }
 }

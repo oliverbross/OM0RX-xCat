@@ -16,19 +16,93 @@ public struct RadioVFO: Equatable, Sendable {
     public var mode: String
     public var isReceive: Bool
     public var isTransmit: Bool
+    public var ritEnabled: Bool
+    public var ritOffsetHz: Int
+    public var xitEnabled: Bool
+    public var xitOffsetHz: Int
 
     public init(
         letter: String,
         frequencyHz: Int64,
         mode: String,
         isReceive: Bool = false,
-        isTransmit: Bool = false
+        isTransmit: Bool = false,
+        ritEnabled: Bool = false,
+        ritOffsetHz: Int = 0,
+        xitEnabled: Bool = false,
+        xitOffsetHz: Int = 0
     ) {
         self.letter = letter.uppercased()
         self.frequencyHz = frequencyHz
         self.mode = mode.uppercased()
         self.isReceive = isReceive
         self.isTransmit = isTransmit
+        self.ritEnabled = ritEnabled
+        self.ritOffsetHz = ritOffsetHz
+        self.xitEnabled = xitEnabled
+        self.xitOffsetHz = xitOffsetHz
+    }
+}
+
+public enum RemoteStationAction: String, CaseIterable, Sendable {
+    case standby
+    case operate
+    case tune
+    case cancel
+}
+
+public struct RemoteStationStatus: Equatable, Sendable {
+    public var revision: Int
+    public var radioKnown: Bool
+    public var radioStale: Bool
+    public var stationBound: Bool
+    public var commissioned: Bool
+    public var coordinatorState: String
+    public var supportedCommands: Set<String>
+    public var allowedActions: Set<String>
+    public var inhibitors: [String]
+    public var kpaSummary: String
+    public var katSummary: String
+    public var routeSummary: String
+    public var alarmSummary: String
+    public var alarmMessages: [String]
+
+    public init(
+        revision: Int = 0,
+        radioKnown: Bool = false,
+        radioStale: Bool = true,
+        stationBound: Bool = false,
+        commissioned: Bool = false,
+        coordinatorState: String = "unknown",
+        supportedCommands: Set<String> = [],
+        allowedActions: Set<String> = [],
+        inhibitors: [String] = ["Agent state is not available"],
+        kpaSummary: String = "KPA unknown",
+        katSummary: String = "KAT unknown",
+        routeSummary: String = "Route unknown",
+        alarmSummary: String = "ALARM unknown",
+        alarmMessages: [String] = []
+    ) {
+        self.revision = revision
+        self.radioKnown = radioKnown
+        self.radioStale = radioStale
+        self.stationBound = stationBound
+        self.commissioned = commissioned
+        self.coordinatorState = coordinatorState
+        self.supportedCommands = supportedCommands
+        self.allowedActions = allowedActions
+        self.inhibitors = inhibitors
+        self.kpaSummary = kpaSummary
+        self.katSummary = katSummary
+        self.routeSummary = routeSummary
+        self.alarmSummary = alarmSummary
+        self.alarmMessages = alarmMessages
+    }
+
+    public var hazardousWritesAllowed: Bool { inhibitors.isEmpty }
+
+    public func allows(_ action: RemoteStationAction) -> Bool {
+        allowedActions.contains(action.rawValue)
     }
 }
 
@@ -42,6 +116,8 @@ public struct RadioSnapshot: Equatable, Sendable {
     public var transmitFrequencyHz: Int64
     public var station: String
     public var vfos: [RadioVFO]
+    public var remoteStationStatus: RemoteStationStatus?
+    public var rfPowerWatts: Int?
 
     public init(
         frequencyHz: Int64 = 14_074_000,
@@ -52,7 +128,9 @@ public struct RadioSnapshot: Equatable, Sendable {
         transmitSlice: String? = nil,
         transmitFrequencyHz: Int64? = nil,
         station: String = "",
-        vfos: [RadioVFO]? = nil
+        vfos: [RadioVFO]? = nil,
+        remoteStationStatus: RemoteStationStatus? = nil,
+        rfPowerWatts: Int? = nil
     ) {
         self.frequencyHz = frequencyHz
         self.mode = mode
@@ -62,6 +140,8 @@ public struct RadioSnapshot: Equatable, Sendable {
         self.transmitSlice = transmitSlice ?? slice
         self.transmitFrequencyHz = transmitFrequencyHz ?? frequencyHz
         self.station = station
+        self.remoteStationStatus = remoteStationStatus
+        self.rfPowerWatts = rfPowerWatts
         self.vfos = vfos ?? [RadioVFO(
             letter: slice,
             frequencyHz: frequencyHz,
@@ -79,6 +159,7 @@ public struct RadioSnapshot: Equatable, Sendable {
 public struct AppConfiguration: Codable, Equatable, Sendable {
     public enum ConnectionKind: String, Codable, CaseIterable, Sendable {
         case smartLink = "SmartLink"
+        case remoteAgent = "Remote Station Agent"
         case local = "Local network"
         case legacyXCAT = "Remote via supervised xCAT"
         case simulator = "Simulator"
@@ -91,6 +172,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     public var sliceLetter: String
     public var smartLinkEmail: String
     public var smartLinkRadioSerial: String
+    public var remoteAgentBaseURL: String
     public var catPort: UInt16
     public var rigCtlPort: UInt16
     public var legacyXCATHost: String
@@ -107,6 +189,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         sliceLetter: String = "A",
         smartLinkEmail: String = "",
         smartLinkRadioSerial: String = "",
+        remoteAgentBaseURL: String = "",
         catPort: UInt16 = 5002,
         rigCtlPort: UInt16 = 4532,
         legacyXCATHost: String = "127.0.0.1",
@@ -122,6 +205,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         self.sliceLetter = sliceLetter
         self.smartLinkEmail = smartLinkEmail
         self.smartLinkRadioSerial = smartLinkRadioSerial
+        self.remoteAgentBaseURL = remoteAgentBaseURL
         self.catPort = catPort
         self.rigCtlPort = rigCtlPort
         self.legacyXCATHost = legacyXCATHost
@@ -133,7 +217,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case connectionKind, radioHost, radioPort, stationName, sliceLetter
-        case smartLinkEmail, smartLinkRadioSerial
+        case smartLinkEmail, smartLinkRadioSerial, remoteAgentBaseURL
         case catPort, rigCtlPort, legacyXCATHost, legacyXCATPort
         case superviseLegacyXCAT, allowCATTransmit, launchServersAutomatically
     }
@@ -147,6 +231,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         sliceLetter = try values.decodeIfPresent(String.self, forKey: .sliceLetter) ?? "A"
         smartLinkEmail = try values.decodeIfPresent(String.self, forKey: .smartLinkEmail) ?? ""
         smartLinkRadioSerial = try values.decodeIfPresent(String.self, forKey: .smartLinkRadioSerial) ?? ""
+        remoteAgentBaseURL = try values.decodeIfPresent(String.self, forKey: .remoteAgentBaseURL) ?? ""
         catPort = try values.decodeIfPresent(UInt16.self, forKey: .catPort) ?? 5002
         rigCtlPort = try values.decodeIfPresent(UInt16.self, forKey: .rigCtlPort) ?? 4532
         legacyXCATHost = try values.decodeIfPresent(String.self, forKey: .legacyXCATHost) ?? "127.0.0.1"
@@ -179,6 +264,10 @@ public protocol RadioControlling: Actor {
     func sendCW(_ text: String) async throws
     func clearCW() async throws
     func setTransmit(_ mode: CATTransmitMode) async throws
+    func setRIT(enabled: Bool, offsetHz: Int, vfo: String?) async throws
+    func setXIT(enabled: Bool, offsetHz: Int, vfo: String?) async throws
+    func setRFPower(_ watts: Int) async throws
+    func performStationAction(_ action: RemoteStationAction) async throws
 }
 
 public extension RadioControlling {
@@ -197,6 +286,10 @@ public extension RadioControlling {
     func sendCW(_ text: String) async throws { throw XCatError.unsupported }
     func clearCW() async throws { throw XCatError.unsupported }
     func setTransmit(_ mode: CATTransmitMode) async throws { try await setTransmit(true) }
+    func setRIT(enabled: Bool, offsetHz: Int, vfo: String? = nil) async throws { throw XCatError.unsupported }
+    func setXIT(enabled: Bool, offsetHz: Int, vfo: String? = nil) async throws { throw XCatError.unsupported }
+    func setRFPower(_ watts: Int) async throws { throw XCatError.unsupported }
+    func performStationAction(_ action: RemoteStationAction) async throws { throw XCatError.unsupported }
 }
 
 public enum XCatError: LocalizedError, Sendable {

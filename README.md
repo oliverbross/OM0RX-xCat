@@ -14,11 +14,15 @@ Copyright © 2026 Oliver Bross OM0RX. Licensed under GPL-3.0-only.
 - Native Apple Silicon Swift/SwiftUI application for macOS 14 or later.
 - Native SmartLink authentication, broker discovery, WAN TLS validation,
   Keychain refresh-token storage, and radio-certificate pinning.
+- Separately configurable Remote Station Agent transport over authenticated
+  HTTPS and WebSocket, with the bearer token stored in macOS Keychain.
+- Menu-bar station widget with live VFO, KPA500, KAT500, route, commissioning,
+  blocker, and alarm state.
 - Strict radio-serial and SmartSDR station selection.
 - Live two-line VFO display. A and B each show their frequency, mode, and
   independent `RX` and `TX` roles from the radio's slice flags.
 - RUMlogNG TS-480 compatibility: `FA`, `FB`, `KS`, `AI`, `IF`, `FR`, `FT`,
-  `MD`, `RX`, opt-in `TX`, and bounded `KY` CW commands.
+  `MD`, `RT`, `XT`, `PC`, `RX`, opt-in `TX`, and bounded `KY` CW commands.
 - Live split reporting: `FR`, `FT`, and `IF` reflect the radio's actual RX and
   TX VFO rather than a cached CAT default.
 - RigCtlD compatibility: `f`, `m`, `F`, `M`, and opt-in `T`.
@@ -32,6 +36,9 @@ Copyright © 2026 Oliver Bross OM0RX. Licensed under GPL-3.0-only.
 Download `OM0RX-xCat-v0.2.0.zip` from GitHub Releases, expand it, and move
 `OM0RX-xCat.app` to `/Applications`. The release is signed with the Developer
 ID certificate for Oliver Bross. See the release notes for notarization status.
+
+The current source tree builds version 0.3.0 with Remote Station Agent support.
+The published v0.2.0 release predates that transport.
 
 On first use:
 
@@ -76,6 +83,11 @@ app verifies listener readiness and reports a port collision as startup failure.
 
 ## Other connection modes
 
+- **Remote Station Agent** connects only to the independent Windows station
+  agent. Enter its Tailscale Serve HTTPS URL and bearer token, save, and start.
+  The token is stored in Keychain and never placed in the URL, logs, settings,
+  or WebSocket query string. See
+  [`docs/REMOTE_AGENT_CLIENT.md`](docs/REMOTE_AGENT_CLIENT.md).
 - **Local network** connects directly to the radio's SmartSDR TCP port 4992.
 - **Remote via supervised xCAT** retains compatibility with the old xCAT app,
   including restart supervision, but is no longer required for the tested
@@ -92,6 +104,14 @@ not transport or supervise RF audio.
 The tested SmartLink path uses the radio's advertised public or UPnP-forwarded
 TLS/TCP endpoint. UDP NAT hole punching is not implemented, so radios reachable
 only through hole punching are outside v0.2.0's verified scope.
+
+In Remote Station Agent mode every frequency/mode route change, receive/transmit
+VFO selection, split change, PTT/tune, XIT, CWX, and RF-power write goes only to
+the agent. OM0RX-xCat does not also write to SmartLink. Hazardous writes fail
+closed when the radio is disconnected, unknown, stale, or unbound; when the
+station is uncommissioned; or when the state contains blockers or active alarms.
+PTT-off, CW clear, standby, and cancel remain recovery operations, subject to the
+agent's advertised capabilities and allowed actions.
 
 ## Build and test
 

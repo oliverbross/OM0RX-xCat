@@ -11,15 +11,27 @@ final class AppModel: ObservableObject {
     @Published private(set) var isRunning = false
     @Published private(set) var isRadioConnected = false
     @Published var smartLinkPassword = ""
+    @Published var remoteAgentToken = ""
+    @Published private(set) var remoteStationStatus: RemoteStationStatus?
+    @Published var remoteRITEnabled = false
+    @Published var remoteRITOffsetHz = 0
+    @Published var remoteXITEnabled = false
+    @Published var remoteXITOffsetHz = 0
+    @Published var remoteRFPowerWatts = 0
 
     private var catServer: TCPCommandServer?
     private var rigCtlServer: TCPCommandServer?
     private var radio: (any RadioControlling)?
     private var flexRadio: FlexRadioClient?
     private var smartLinkRadio: SmartLinkRadioClient?
+    private var remoteAgent: RemoteAgentClient?
     private var legacyXCAT: LegacyXCATClient?
     private var lastLegacyXCATLaunch = Date.distantPast
     private var stopTask: Task<Void, Never>?
+
+    var isStationReady: Bool {
+        isRadioConnected && (remoteStationStatus?.hazardousWritesAllowed ?? true)
+    }
 
     init() {
         if let data = UserDefaults.standard.data(forKey: "configuration"),
@@ -35,8 +47,13 @@ final class AppModel: ObservableObject {
     }
 
     func save() {
-        persistConfiguration()
-        record("Settings saved")
+        do {
+            try saveRemoteAgentTokenIfNeeded()
+            persistConfiguration()
+            record("Settings saved")
+        } catch {
+            record("Could not save settings: \(error.localizedDescription)")
+        }
     }
 
     func forgetSmartLinkSession() {
@@ -62,12 +79,52 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func forgetRemoteAgentToken() {
+        do {
+            try RemoteAgentKeychain(endpointIdentifier: configuration.remoteAgentBaseURL).deleteToken()
+            remoteAgentToken = ""
+            record("Forgot the saved Remote Agent token")
+        } catch {
+            record("Could not forget Remote Agent token: \(error.localizedDescription)")
+        }
+    }
+
     func start() {
         guard !isRunning, stopTask == nil else { return }
         do {
             let selectedRadio: any RadioControlling
             var initialRadioStatus: String?
-            if configuration.connectionKind == .local {
+            if configuration.connectionKind == .remoteAgent {
+                let baseURL = configuration.remoteAgentBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !baseURL.isEmpty else { throw XCatError.server("Enter the Remote Agent HTTPS URL.") }
+                let keychain = RemoteAgentKeychain(endpointIdentifier: baseURL)
+                let enteredToken = remoteAgentToken.trimmingCharacters(in: .whitespacesAndNewlines)
+                let token = enteredToken.isEmpty ? (try keychain.loadToken() ?? "") : enteredToken
+                let client = try RemoteAgentClient(
+                    baseURL: baseURL,
+                    token: token,
+                    onState: { [weak self] state, description in
+                        Task { @MainActor in
+                            if state != .ready {
+                                self?.isRadioConnected = false
+                                self?.status = description
+                            }
+                            self?.record("Agent: \(description)")
+                        }
+                    },
+                    onSnapshot: { [weak self] snapshot in
+                        Task { @MainActor in
+                            self?.isRadioConnected = snapshot.isConnected
+                            self?.remoteStationStatus = snapshot.remoteStationStatus
+                            self?.status = Self.radioStatus(snapshot)
+                        }
+                    }
+                )
+                if !enteredToken.isEmpty { try keychain.saveToken(enteredToken) }
+                remoteAgent = client
+                selectedRadio = client
+                remoteAgentToken = ""
+            } else if configuration.connectionKind == .local {
                 guard !configuration.radioHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                     throw XCatError.server("Enter the local radio host or IP address.")
                 }
@@ -231,6 +288,9 @@ final class AppModel: ObservableObject {
             if let smartLinkRadio {
                 Task { await smartLinkRadio.start() }
             }
+            if let remoteAgent {
+                Task { await remoteAgent.start() }
+            }
         } catch {
             let message = error.localizedDescription
             stop()
@@ -249,12 +309,15 @@ final class AppModel: ObservableObject {
         let flexToStop = flexRadio
         let legacyToStop = legacyXCAT
         let smartLinkToStop = smartLinkRadio
+        let remoteAgentToStop = remoteAgent
         flexRadio = nil
         legacyXCAT = nil
         smartLinkRadio = nil
+        remoteAgent = nil
         radio = nil
         isRunning = false
         isRadioConnected = false
+        remoteStationStatus = nil
         status = "Stopped"
         record("OM0RX-xCat stopped")
         stopTask = Task { [weak self] in
@@ -262,6 +325,8 @@ final class AppModel: ObservableObject {
             try? await radioToStop?.setTransmit(false)
             if let smartLinkToStop {
                 await smartLinkToStop.stop()
+            } else if let remoteAgentToStop {
+                await remoteAgentToStop.stop()
             } else if let flexToStop {
                 await flexToStop.stop()
             } else if let legacyToStop {
@@ -275,6 +340,34 @@ final class AppModel: ObservableObject {
         stop()
         let activeStop = stopTask
         await activeStop?.value
+    }
+
+    func applyRemoteRIT() {
+        runRemoteControl("RIT") { client in
+            try await client.setRIT(enabled: self.remoteRITEnabled, offsetHz: self.remoteRITOffsetHz, vfo: nil)
+        }
+    }
+
+    func applyRemoteXIT() {
+        runRemoteControl("XIT") { client in
+            try await client.setXIT(enabled: self.remoteXITEnabled, offsetHz: self.remoteXITOffsetHz, vfo: nil)
+        }
+    }
+
+    func applyRemoteRFPower() {
+        runRemoteControl("RF power") { client in
+            try await client.setRFPower(self.remoteRFPowerWatts)
+        }
+    }
+
+    func performRemoteStationAction(_ action: RemoteStationAction) {
+        runRemoteControl("Station \(action.rawValue)") { client in
+            try await client.performStationAction(action)
+        }
+    }
+
+    func remoteActionAllowed(_ action: RemoteStationAction) -> Bool {
+        remoteStationStatus?.allows(action) == true
     }
 
     private func record(_ message: String) {
@@ -292,15 +385,47 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private func saveRemoteAgentTokenIfNeeded() throws {
+        let token = remoteAgentToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard configuration.connectionKind == .remoteAgent, !token.isEmpty else { return }
+        let baseURL = configuration.remoteAgentBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !baseURL.isEmpty else { throw XCatError.server("Enter the Remote Agent HTTPS URL first.") }
+        try RemoteAgentKeychain(endpointIdentifier: baseURL).saveToken(token)
+        remoteAgentToken = ""
+    }
+
+    private func runRemoteControl(
+        _ label: String,
+        operation: @escaping @Sendable (RemoteAgentClient) async throws -> Void
+    ) {
+        guard let remoteAgent else {
+            record("\(label) unavailable: Remote Agent is not running")
+            return
+        }
+        Task { [weak self] in
+            do {
+                try await operation(remoteAgent)
+                await MainActor.run { self?.record("\(label) accepted by Remote Agent") }
+            } catch {
+                await MainActor.run { self?.record("\(label) rejected: \(error.localizedDescription)") }
+            }
+        }
+    }
+
     private static func radioStatus(_ snapshot: RadioSnapshot) -> String {
-        ["A", "B"].map { letter in
+        var lines = ["A", "B"].map { letter in
             guard let vfo = snapshot.vfo(letter) else { return "VFO \(letter) · inactive" }
             let frequency = String(format: "%.3f MHz", Double(vfo.frequencyHz) / 1_000_000)
             let roles = [vfo.isReceive ? "RX" : nil, vfo.isTransmit ? "TX" : nil]
                 .compactMap { $0 }
                 .joined(separator: "+")
             return "VFO \(letter) · \(roles.isEmpty ? "standby" : roles) · \(frequency) \(vfo.mode)"
-        }.joined(separator: "\n")
+        }
+        if let station = snapshot.remoteStationStatus {
+            lines[0] += " · \(station.kpaSummary) · \(station.katSummary)"
+            lines[1] += " · \(station.routeSummary) · \(station.alarmSummary)"
+        }
+        return lines.joined(separator: "\n")
     }
 
     private func ensureLegacyXCATRunning() {

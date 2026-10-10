@@ -40,6 +40,15 @@ public actor CATCommandProcessor {
         case "MD":
             guard snapshot.isConnected else { return "?;" }
             return "MD\(Self.kenwoodMode(for: snapshot.mode));"
+        case "RT":
+            guard snapshot.isConnected, let vfo = Self.receiveVFOState(snapshot) else { return "?;" }
+            return "RT\(vfo.ritEnabled ? 1 : 0);"
+        case "XT":
+            guard snapshot.isConnected, let vfo = Self.receiveVFOState(snapshot) else { return "?;" }
+            return "XT\(vfo.xitEnabled ? 1 : 0);"
+        case "PC":
+            guard snapshot.isConnected, let watts = snapshot.rfPowerWatts else { return "?;" }
+            return String(format: "PC%03d;", watts)
         case "TX", "TX0", "TX1", "TX2":
             guard allowTransmit else { return "?;" }
             do {
@@ -82,6 +91,15 @@ public actor CATCommandProcessor {
             }
             if command.uppercased().hasPrefix("KY") {
                 return await handleCW(String(command.dropFirst(2)))
+            }
+            if command.uppercased().hasPrefix("RT"), command.count == 3 {
+                return await setRIT(String(command.dropFirst(2)), snapshot: snapshot)
+            }
+            if command.uppercased().hasPrefix("XT"), command.count == 3 {
+                return await setXIT(String(command.dropFirst(2)), snapshot: snapshot)
+            }
+            if command.uppercased().hasPrefix("PC"), command.count == 5 {
+                return await setRFPower(String(command.dropFirst(2)))
             }
             return "?;"
         }
@@ -137,6 +155,38 @@ public actor CATCommandProcessor {
         }
     }
 
+    private func setRIT(_ value: String, snapshot: RadioSnapshot) async -> String? {
+        guard let enabled = Self.binary(value), let vfo = Self.receiveVFOState(snapshot) else { return "?;" }
+        do {
+            try await radio.setRIT(enabled: enabled, offsetHz: vfo.ritOffsetHz, vfo: vfo.letter)
+            return nil
+        } catch {
+            return "?;"
+        }
+    }
+
+    private func setXIT(_ value: String, snapshot: RadioSnapshot) async -> String? {
+        guard allowTransmit,
+              let enabled = Self.binary(value),
+              let vfo = Self.receiveVFOState(snapshot) else { return "?;" }
+        do {
+            try await radio.setXIT(enabled: enabled, offsetHz: vfo.xitOffsetHz, vfo: vfo.letter)
+            return nil
+        } catch {
+            return "?;"
+        }
+    }
+
+    private func setRFPower(_ value: String) async -> String? {
+        guard allowTransmit, let watts = Int(value), watts > 0 else { return "?;" }
+        do {
+            try await radio.setRFPower(watts)
+            return nil
+        } catch {
+            return "?;"
+        }
+    }
+
     private static func frequencyResponse(prefix: String, hertz: Int64) -> String {
         String(format: "%@%011lld;", prefix, hertz)
     }
@@ -182,5 +232,13 @@ public actor CATCommandProcessor {
 
     private static func transmitVFO(for snapshot: RadioSnapshot) -> Int {
         snapshot.vfo("B")?.isTransmit == true ? 1 : 0
+    }
+
+    private static func receiveVFOState(_ snapshot: RadioSnapshot) -> RadioVFO? {
+        snapshot.vfo("B")?.isReceive == true ? snapshot.vfo("B") : snapshot.vfo("A")
+    }
+
+    private static func binary(_ value: String) -> Bool? {
+        value == "0" ? false : (value == "1" ? true : nil)
     }
 }

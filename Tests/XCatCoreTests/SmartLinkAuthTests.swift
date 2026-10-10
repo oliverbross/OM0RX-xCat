@@ -23,6 +23,7 @@ struct SmartLinkAuthTests {
 
         #expect(configuration.smartLinkEmail.isEmpty)
         #expect(configuration.smartLinkRadioSerial.isEmpty)
+        #expect(configuration.remoteAgentBaseURL.isEmpty)
         #expect(configuration.allowCATTransmit == false)
     }
 }

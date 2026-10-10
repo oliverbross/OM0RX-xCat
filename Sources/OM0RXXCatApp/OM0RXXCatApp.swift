@@ -24,7 +24,7 @@ struct OM0RXXCatApp: App {
     @StateObject private var model = AppModel()
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main") {
             ContentView()
                 .environmentObject(model)
                 .task {
@@ -35,5 +35,15 @@ struct OM0RXXCatApp: App {
                 }
         }
         .windowResizability(.contentMinSize)
+
+        MenuBarExtra {
+            MenuBarView()
+                .environmentObject(model)
+        } label: {
+            Label("OM0RX-xCat", systemImage: model.isStationReady
+                  ? "antenna.radiowaves.left.and.right"
+                  : "exclamationmark.triangle")
+        }
+        .menuBarExtraStyle(.window)
     }
 }
