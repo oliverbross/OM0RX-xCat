@@ -57,7 +57,7 @@ struct MenuBarView: View {
             Divider().overlay(cyan.opacity(0.18))
             RotatorMonitorPanel()
         }
-        .frame(width: 903)
+        .frame(width: 979)
         .background(
             LinearGradient(
                 colors: [Color(red: 0.025, green: 0.06, blue: 0.11), Color(red: 0.02, green: 0.035, blue: 0.065)],

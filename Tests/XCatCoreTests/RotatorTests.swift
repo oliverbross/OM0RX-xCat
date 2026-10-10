@@ -22,6 +22,15 @@ import Testing
     #expect(destination.longitude > home.longitude)
 }
 
+@Test func compassClickCoordinatesProduceCardinalBearings() {
+    #expect(RotatorGeometry.bearingForDialPoint(x: 100, y: 0, centerX: 100, centerY: 100, radius: 100) == 0)
+    #expect(RotatorGeometry.bearingForDialPoint(x: 200, y: 100, centerX: 100, centerY: 100, radius: 100) == 90)
+    #expect(RotatorGeometry.bearingForDialPoint(x: 100, y: 200, centerX: 100, centerY: 100, radius: 100) == 180)
+    #expect(RotatorGeometry.bearingForDialPoint(x: 0, y: 100, centerX: 100, centerY: 100, radius: 100) == 270)
+    #expect(RotatorGeometry.bearingForDialPoint(x: 100, y: 100, centerX: 100, centerY: 100, radius: 100) == nil)
+    #expect(RotatorGeometry.bearingForDialPoint(x: 201, y: 100, centerX: 100, centerY: 100, radius: 100) == nil)
+}
+
 @Test func dcu1ProtocolCommandsAndResponses() {
     #expect(DCU1Protocol.pollCommand == "AI1;")
     #expect(DCU1Protocol.stopCommand == ";")

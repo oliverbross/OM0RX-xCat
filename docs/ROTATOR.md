@@ -58,10 +58,19 @@ grid or RUMlog's own resolved bearing.
 The station monitor is widened into two independent panes:
 
 - radio, VFO, KPA500, KAT500, route, and station actions on the left
-- rotator status, live compass, beam sector, target, world map, and movement
-  controls on the right
+- rotator status, live compass, target-area map, and movement controls on the
+  right
 
 The detached monitor remains a normal movable macOS window and restores its
-screen position. The map target is exact when a grid is known. When RUMlog only
-supplies a bearing, the map shows a clearly bounded bearing projection while the
-compass remains authoritative.
+screen position. The compass has one full needle: the cyan physical-antenna
+readback. It smoothly interpolates the 100 ms samples by the shortest path across
+0°/360°, while the current numeric heading and CW/CCW state continue to follow
+the controller readback. The selected target is a small purple rim marker and a
+separate numeric bearing, so it cannot be mistaken for a second antenna.
+
+Click anywhere inside the compass to set that bearing and send a DCU-1 turn
+command. The map follows each geographic target and zooms to its country or
+region; it falls back to a world view when no target coordinate is available.
+The map target is exact when a grid is known. When RUMlog only supplies a bearing,
+the projected map point is directional context and the compass remains
+authoritative.

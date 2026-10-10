@@ -197,6 +197,22 @@ public enum MaidenheadLocator {
 }
 
 public enum RotatorGeometry {
+    public static func bearingForDialPoint(
+        x: Double,
+        y: Double,
+        centerX: Double,
+        centerY: Double,
+        radius: Double
+    ) -> Double? {
+        guard x.isFinite, y.isFinite, centerX.isFinite, centerY.isFinite,
+              radius.isFinite, radius > 0 else { return nil }
+        let horizontal = x - centerX
+        let vertical = centerY - y
+        let distance = hypot(horizontal, vertical)
+        guard distance > 0.5, distance <= radius else { return nil }
+        return normalized(atan2(horizontal, vertical).degrees)
+    }
+
     public static func initialBearing(from: GeoCoordinate, to: GeoCoordinate) -> Double {
         let latitude1 = from.latitude.radians
         let latitude2 = to.latitude.radians

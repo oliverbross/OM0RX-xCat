@@ -42,6 +42,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var rotatorTargetCoordinate: GeoCoordinate?
     @Published private(set) var rotatorTargetDistanceKilometers: Double?
     @Published private(set) var rotatorIsMoving = false
+    @Published private(set) var rotatorMotionDirection = ""
     @Published var rotatorTargetInput = ""
 
     private var catServer: TCPCommandServer?
@@ -63,6 +64,7 @@ final class AppModel: ObservableObject {
     private var pendingTelemetryTiming: TelemetryTiming?
     private var lastRotatorAzimuth: Double?
     private var lastRotatorMovementAt = Date.distantPast
+    private var activeRotatorTarget: Double?
     private var lastAutomaticRotatorCommand: (bearing: Double, date: Date)?
 
     private struct TelemetryTiming {
@@ -548,6 +550,8 @@ final class AppModel: ObservableObject {
         rotatorStatus = "Disconnected"
         rotatorFeedStatus = "RUMlog feed stopped"
         rotatorIsMoving = false
+        rotatorMotionDirection = ""
+        activeRotatorTarget = nil
     }
 
     func saveRotatorSettingsAndReconnect() {
@@ -602,8 +606,14 @@ final class AppModel: ObservableObject {
             do {
                 try await client.turn(to: bearing)
                 await MainActor.run {
-                    self?.rotatorStatus = "Turning to \(Int(bearing.rounded()))°"
-                    self?.record("Rotator: turn to \(Int(bearing.rounded()))°")
+                    guard let self else { return }
+                    self.activeRotatorTarget = bearing
+                    self.rotatorIsMoving = true
+                    self.lastRotatorMovementAt = Date()
+                    self.rotatorMotionDirection = self.motionDirection(to: bearing)
+                    self.rotatorStatus = self.turningStatus(current: self.rotatorAzimuth, target: bearing)
+                    self.scheduleRotatorIdleCheck(after: 2.5)
+                    self.record("Rotator: turn to \(Int(bearing.rounded()))°")
                 }
             } catch {
                 await MainActor.run {
@@ -612,6 +622,13 @@ final class AppModel: ObservableObject {
                 }
             }
         }
+    }
+
+    func turnRotatorFromCompass(to bearing: Double) {
+        let normalized = RotatorGeometry.normalized(bearing)
+        setRotatorTarget(bearing: normalized, label: "Manual", source: "Compass bearing", coordinate: nil)
+        rotatorTargetInput = String(format: "%.0f", normalized)
+        turnRotatorToTarget()
     }
 
     func toggleRotatorPath() {
@@ -631,7 +648,12 @@ final class AppModel: ObservableObject {
             do {
                 try await client.rotate(clockwise: clockwise)
                 await MainActor.run {
+                    self?.activeRotatorTarget = nil
+                    self?.rotatorIsMoving = true
+                    self?.lastRotatorMovementAt = Date()
+                    self?.rotatorMotionDirection = clockwise ? "CW" : "CCW"
                     self?.rotatorStatus = clockwise ? "Rotating clockwise" : "Rotating counter-clockwise"
+                    self?.scheduleRotatorIdleCheck(after: 2.5)
                     self?.record(clockwise ? "Rotator: clockwise" : "Rotator: counter-clockwise")
                 }
             } catch {
@@ -647,6 +669,8 @@ final class AppModel: ObservableObject {
                 try await client.stopRotation()
                 await MainActor.run {
                     self?.rotatorIsMoving = false
+                    self?.rotatorMotionDirection = ""
+                    self?.activeRotatorTarget = nil
                     self?.rotatorStatus = "Stop command sent"
                     self?.record("Rotator: stop")
                 }
@@ -959,18 +983,60 @@ final class AppModel: ObservableObject {
 
     private func applyRotatorAzimuth(_ azimuth: Double) {
         let now = Date()
+        let normalized = RotatorGeometry.normalized(azimuth)
         if let previous = lastRotatorAzimuth,
-           abs(RotatorGeometry.shortestDifference(from: previous, to: azimuth)) >= 0.2 {
+           abs(RotatorGeometry.shortestDifference(from: previous, to: normalized)) >= 0.2 {
+            let delta = RotatorGeometry.shortestDifference(from: previous, to: normalized)
             lastRotatorMovementAt = now
             rotatorIsMoving = true
+            rotatorMotionDirection = delta >= 0 ? "CW" : "CCW"
         }
-        lastRotatorAzimuth = azimuth
-        rotatorAzimuth = RotatorGeometry.normalized(azimuth)
+        lastRotatorAzimuth = normalized
+        rotatorAzimuth = normalized
+
+        if let target = activeRotatorTarget {
+            let remaining = abs(RotatorGeometry.shortestDifference(from: normalized, to: target))
+            if remaining <= 1.0 {
+                activeRotatorTarget = nil
+                rotatorIsMoving = false
+                rotatorMotionDirection = ""
+                rotatorStatus = "At target \(Self.degreesText(normalized))"
+            } else if rotatorIsMoving {
+                rotatorStatus = turningStatus(current: normalized, target: target)
+            }
+        }
+        if rotatorIsMoving {
+            scheduleRotatorIdleCheck(after: 2.5)
+        }
+    }
+
+    private func motionDirection(to target: Double) -> String {
+        guard let current = rotatorAzimuth else { return "" }
+        return RotatorGeometry.shortestDifference(from: current, to: target) >= 0 ? "CW" : "CCW"
+    }
+
+    private func turningStatus(current: Double?, target: Double) -> String {
+        let direction = motionDirection(to: target)
+        guard let current else { return "Turning to \(Self.degreesText(target))" }
+        return "Turning \(direction) · \(Self.degreesText(current)) → \(Self.degreesText(target))"
+    }
+
+    private func scheduleRotatorIdleCheck(after delay: TimeInterval) {
         let movementStamp = lastRotatorMovementAt
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self, self.lastRotatorMovementAt == movementStamp else { return }
+            if let target = self.activeRotatorTarget,
+               let current = self.rotatorAzimuth,
+               abs(RotatorGeometry.shortestDifference(from: current, to: target)) > 1.0 {
+                self.rotatorStatus = "Holding at \(Self.degreesText(current)) · target \(Self.degreesText(target))"
+            }
             self.rotatorIsMoving = false
+            self.rotatorMotionDirection = ""
         }
+    }
+
+    private static func degreesText(_ bearing: Double) -> String {
+        String(format: "%03.0f°", RotatorGeometry.normalized(bearing))
     }
 
     private static func normalizedBand(_ raw: String) -> String {

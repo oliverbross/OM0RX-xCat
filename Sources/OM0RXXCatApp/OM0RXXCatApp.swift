@@ -44,7 +44,7 @@ struct OM0RXXCatApp: App {
                 .environmentObject(model)
         }
         .windowResizability(.contentSize)
-        .defaultSize(width: 903, height: 420)
+        .defaultSize(width: 979, height: 540)
 
         MenuBarExtra {
             MenuBarView()

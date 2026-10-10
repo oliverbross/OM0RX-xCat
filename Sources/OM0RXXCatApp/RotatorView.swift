@@ -230,7 +230,9 @@ struct RotatorMonitorPanel: View {
                 azimuth: model.rotatorAzimuth,
                 target: model.rotatorTargetBearing,
                 beamWidth: Double(model.configuration.rotator.beamWidthDegrees),
-                isMoving: model.rotatorIsMoving
+                isMoving: model.rotatorIsMoving,
+                motionDirection: model.rotatorMotionDirection,
+                onTurn: { model.turnRotatorFromCompass(to: $0) }
             )
             .frame(height: 176)
 
@@ -252,8 +254,12 @@ struct RotatorMonitorPanel: View {
                 }
             }
 
-            RotatorMapInset(home: model.rotatorHomeCoordinate, target: model.rotatorTargetCoordinate)
-                .frame(height: 88)
+            RotatorMapInset(
+                home: model.rotatorHomeCoordinate,
+                target: model.rotatorTargetCoordinate,
+                targetLabel: model.rotatorTargetLabel
+            )
+                .frame(height: 190)
                 .clipShape(RoundedRectangle(cornerRadius: 7))
                 .overlay(RoundedRectangle(cornerRadius: 7).stroke(cyan.opacity(0.22)))
 
@@ -281,13 +287,16 @@ struct RotatorMonitorPanel: View {
             .controlSize(.small)
         }
         .padding(12)
-        .frame(width: 354)
+        .frame(width: 430)
         .background(Color(red: 0.02, green: 0.045, blue: 0.075))
     }
 
     private var connectionLabel: String {
         switch model.rotatorConnectionState {
-        case .connected: model.rotatorIsMoving ? "MOVING" : "READY"
+        case .connected:
+            model.rotatorIsMoving
+                ? "MOVING\(model.rotatorMotionDirection.isEmpty ? "" : " \(model.rotatorMotionDirection)")"
+                : "READY"
         case .connecting: "CONNECTING"
         case .reconnecting: "RETRYING"
         case .failed: "ERROR"
@@ -300,7 +309,7 @@ struct RotatorMonitorPanel: View {
     }
 
     private var connectionTint: Color {
-        model.rotatorConnectionState == .connected ? green : .orange
+        model.rotatorConnectionState == .connected && !model.rotatorIsMoving ? green : .orange
     }
 
     private var targetDetail: String {
@@ -314,6 +323,8 @@ private struct RotatorCompass: View {
     let target: Double?
     let beamWidth: Double
     let isMoving: Bool
+    let motionDirection: String
+    let onTurn: (Double) -> Void
 
     private let cyan = Color(red: 0.40, green: 0.91, blue: 0.98)
     private let magenta = Color(red: 0.75, green: 0.35, blue: 0.95)
@@ -337,39 +348,63 @@ private struct RotatorCompass: View {
                 cardinal("S", angle: 180, side: side)
                 cardinal("W", angle: 270, side: side)
 
-                if let target {
-                    RotatorBeamShape(bearing: target, width: beamWidth)
-                        .fill(magenta.opacity(0.19))
-                    bearingNeedle(target, color: magenta, length: side * 0.42, width: 2)
-                }
                 if let azimuth {
-                    bearingNeedle(azimuth, color: cyan, length: side * 0.38, width: 4)
-                    Text(String(format: "%03.0f°", azimuth))
-                        .font(.system(size: 24, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(cyan)
+                    SmoothRotatorNeedle(azimuth: azimuth, beamWidth: beamWidth, isMoving: isMoving)
+                    VStack(spacing: 1) {
+                        Text(String(format: "%03.0f°", azimuth))
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(cyan)
+                            .contentTransition(.numericText(value: azimuth))
+                        Text(isMoving ? "MOVING\(motionDirection.isEmpty ? "" : " \(motionDirection)")" : "ANTENNA")
+                            .font(.system(size: 8, weight: .bold, design: .rounded))
+                            .foregroundStyle(isMoving ? .orange : cyan.opacity(0.72))
+                    }
+                    .animation(.snappy(duration: 0.18), value: azimuth)
                 } else {
                     Text("---°")
                         .font(.system(size: 24, weight: .bold, design: .rounded))
                         .foregroundStyle(.secondary)
+                }
+                if let target {
+                    targetMarker(target, side: side)
                 }
                 Circle().fill(isMoving ? Color.orange : cyan).frame(width: 9, height: 9)
                     .shadow(color: (isMoving ? Color.orange : cyan).opacity(0.8), radius: 5)
             }
             .frame(width: side, height: side)
             .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+            .contentShape(Circle())
+            .gesture(
+                SpatialTapGesture().onEnded { value in
+                    guard let bearing = RotatorGeometry.bearingForDialPoint(
+                        x: value.location.x,
+                        y: value.location.y,
+                        centerX: side / 2,
+                        centerY: side / 2,
+                        radius: side / 2
+                    ) else { return }
+                    onTurn(bearing)
+                }
+            )
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Antenna azimuth")
         .accessibilityValue(azimuth.map { "\(Int($0.rounded())) degrees" } ?? "Unavailable")
+        .accessibilityHint("Click a bearing on the compass to turn the antenna")
+        .help("Click anywhere on the compass to turn ARCO to that bearing")
     }
 
-    private func bearingNeedle(_ bearing: Double, color: Color, length: CGFloat, width: CGFloat) -> some View {
-        Capsule()
-            .fill(LinearGradient(colors: [color.opacity(0.25), color], startPoint: .bottom, endPoint: .top))
-            .frame(width: width, height: length)
-            .offset(y: -length / 2)
-            .rotationEffect(.degrees(bearing))
+    private func targetMarker(_ bearing: Double, side: CGFloat) -> some View {
+        VStack(spacing: 1) {
+            Circle().fill(magenta).frame(width: 7, height: 7)
+            Text("T")
+                .font(.system(size: 7, weight: .bold, design: .rounded))
+                .foregroundStyle(magenta)
+        }
+        .offset(y: -side / 2 + 16)
+        .rotationEffect(.degrees(bearing))
+        .shadow(color: magenta.opacity(0.65), radius: 3)
     }
 
     private func cardinal(_ text: String, angle: Double, side: CGFloat) -> some View {
@@ -379,6 +414,42 @@ private struct RotatorCompass: View {
             .font(.system(size: 10, weight: .bold, design: .rounded))
             .foregroundStyle(cyan.opacity(0.82))
             .offset(x: sin(radians) * radius, y: -cos(radians) * radius)
+    }
+}
+
+private struct SmoothRotatorNeedle: View {
+    let azimuth: Double
+    let beamWidth: Double
+    let isMoving: Bool
+
+    @State private var displayedAzimuth = 0.0
+
+    private let cyan = Color(red: 0.40, green: 0.91, blue: 0.98)
+
+    var body: some View {
+        GeometryReader { geometry in
+            let side = min(geometry.size.width, geometry.size.height)
+            ZStack {
+                RotatorBeamShape(bearing: 0, width: beamWidth)
+                    .fill(cyan.opacity(isMoving ? 0.20 : 0.12))
+                Capsule()
+                    .fill(LinearGradient(colors: [cyan.opacity(0.28), cyan], startPoint: .bottom, endPoint: .top))
+                    .frame(width: isMoving ? 5 : 4, height: side * 0.38)
+                    .offset(y: -side * 0.19)
+                    .shadow(color: cyan.opacity(isMoving ? 0.75 : 0.45), radius: isMoving ? 5 : 3)
+            }
+            .rotationEffect(.degrees(displayedAzimuth))
+            .frame(width: side, height: side)
+            .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+        }
+        .onAppear { displayedAzimuth = azimuth }
+        .onChange(of: azimuth) { _, newValue in
+            let delta = RotatorGeometry.shortestDifference(from: displayedAzimuth, to: newValue)
+            withAnimation(.linear(duration: 0.16)) {
+                displayedAzimuth += delta
+            }
+        }
+        .allowsHitTesting(false)
     }
 }
 
@@ -406,29 +477,47 @@ private struct RotatorBeamShape: Shape {
 private struct RotatorMapInset: View {
     let home: GeoCoordinate?
     let target: GeoCoordinate?
+    let targetLabel: String
 
-    private let world = MKCoordinateRegion(
-        center: CLLocationCoordinate2D(latitude: 12, longitude: 20),
-        span: MKCoordinateSpan(latitudeDelta: 150, longitudeDelta: 340)
+    private let worldCamera = MapCamera(
+        centerCoordinate: CLLocationCoordinate2D(latitude: 0, longitude: 0),
+        distance: 85_000_000,
+        heading: 0,
+        pitch: 0
     )
 
+    private var initialPosition: MapCameraPosition {
+        guard let target else { return .camera(worldCamera) }
+        return .region(
+            MKCoordinateRegion(
+                center: coordinate(target),
+                span: MKCoordinateSpan(latitudeDelta: 18, longitudeDelta: 26)
+            )
+        )
+    }
+
+    private var mapIdentity: String {
+        guard let target else { return "world" }
+        return String(format: "%.3f,%.3f", target.latitude, target.longitude)
+    }
+
     var body: some View {
-        Map(initialPosition: .region(world), interactionModes: []) {
-            if let home {
+        Map(initialPosition: initialPosition, interactionModes: [.pan, .zoom]) {
+            if target == nil, let home {
                 Annotation("Home", coordinate: coordinate(home)) {
                     Circle().fill(.cyan).frame(width: 8, height: 8).shadow(color: .cyan, radius: 4)
                 }
             }
             if let target {
-                Marker("Target", coordinate: coordinate(target)).tint(.purple)
-            }
-            if let home, let target {
-                MapPolyline(coordinates: [coordinate(home), coordinate(target)])
-                    .stroke(.purple, lineWidth: 2)
+                Marker(targetLabel == "No target" ? "Target" : targetLabel, coordinate: coordinate(target))
+                    .tint(.purple)
             }
         }
+        .id(mapIdentity)
         .mapStyle(.standard(elevation: .flat))
-        .allowsHitTesting(false)
+        .help(target == nil
+              ? "World map — drag to pan and scroll to zoom"
+              : "Target country or region — drag to pan and scroll to zoom")
     }
 
     private func coordinate(_ value: GeoCoordinate) -> CLLocationCoordinate2D {
