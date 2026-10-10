@@ -44,6 +44,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var rotatorIsMoving = false
     @Published private(set) var rotatorMotionDirection = ""
     @Published var rotatorTargetInput = ""
+    @Published private(set) var propagationConditions: PropagationConditionsSnapshot?
+    @Published private(set) var propagationStatus = "Loading solar conditions"
+    @Published private(set) var propagationIsRefreshing = false
 
     private var catServer: TCPCommandServer?
     private var rigCtlServer: TCPCommandServer?
@@ -66,6 +69,8 @@ final class AppModel: ObservableObject {
     private var lastRotatorMovementAt = Date.distantPast
     private var activeRotatorTarget: Double?
     private var lastAutomaticRotatorCommand: (bearing: Double, date: Date)?
+    private var propagationTask: Task<Void, Never>?
+    private let propagationClient = PropagationConditionsClient()
 
     private struct TelemetryTiming {
         let frequencyHz: Int64
@@ -97,6 +102,7 @@ final class AppModel: ObservableObject {
            let imported = RotatorConfiguration.importedRotorConfiguration() {
             configuration.rotator = imported
         }
+        startPropagationUpdates()
     }
 
     var rotatorHomeCoordinate: GeoCoordinate? {
@@ -123,6 +129,45 @@ final class AppModel: ObservableObject {
         case 420_000_000..<451_000_000: return "70cm"
         default: return "Other"
         }
+    }
+
+    func refreshPropagationConditions() {
+        guard !propagationIsRefreshing else { return }
+        Task { [weak self] in
+            await self?.loadPropagationConditions()
+        }
+    }
+
+    private func startPropagationUpdates() {
+        guard propagationTask == nil else { return }
+        propagationTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.loadPropagationConditions()
+                do {
+                    try await Task.sleep(for: .seconds(15 * 60))
+                } catch {
+                    return
+                }
+            }
+        }
+    }
+
+    private func loadPropagationConditions() async {
+        guard !propagationIsRefreshing else { return }
+        propagationIsRefreshing = true
+        if propagationConditions == nil { propagationStatus = "Loading solar conditions" }
+        do {
+            let snapshot = try await propagationClient.fetch()
+            propagationConditions = snapshot
+            if let updatedAt = snapshot.updatedAt, Date().timeIntervalSince(updatedAt) > 3 * 60 * 60 {
+                propagationStatus = "STALE"
+            } else {
+                propagationStatus = "LIVE"
+            }
+        } catch {
+            propagationStatus = propagationConditions == nil ? "OFFLINE" : "STALE"
+        }
+        propagationIsRefreshing = false
     }
 
     func save() {

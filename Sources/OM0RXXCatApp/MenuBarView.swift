@@ -19,7 +19,7 @@ struct MenuBarView: View {
     private let amber = Color(red: 0.99, green: 0.79, blue: 0.39)
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(alignment: .top, spacing: 0) {
             VStack(spacing: 0) {
                 header
                 vfoStrip
@@ -42,7 +42,6 @@ struct MenuBarView: View {
                     )
                     routeCard(station)
                     actionBar
-                    footer(station)
                 } else {
                     ContentUnavailableView(
                         "Waiting for station telemetry",
@@ -50,14 +49,16 @@ struct MenuBarView: View {
                         description: Text(model.status)
                     )
                     .frame(height: 176)
-                    footer(nil)
                 }
+                PropagationConditionsView()
+                footer(model.remoteStationStatus)
             }
             .frame(width: 548)
+            .frame(maxHeight: .infinity, alignment: .top)
             Divider().overlay(cyan.opacity(0.18))
             RotatorMonitorPanel()
         }
-        .frame(width: 979)
+        .frame(width: 979, height: 540, alignment: .top)
         .background(
             LinearGradient(
                 colors: [Color(red: 0.025, green: 0.06, blue: 0.11), Color(red: 0.02, green: 0.035, blue: 0.065)],
