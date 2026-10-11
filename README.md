@@ -1,5 +1,9 @@
 # OM0RX-xCat
 
+[![Latest release](https://img.shields.io/github/v/release/oliverbross/OM0RX-xCat)](https://github.com/oliverbross/OM0RX-xCat/releases/latest)
+[![macOS 14+](https://img.shields.io/badge/macOS-14%2B-black)](#requirements)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+
 OM0RX-xCat is a native macOS bridge between RUMlogNG (or another CAT client)
 and a FlexRadio. It provides loopback-only Kenwood TS-480 CAT and Hamlib
 RigCtlD TCP services, with native SmartLink remote access and no dependency on
@@ -7,7 +11,7 @@ the legacy xCAT application.
 
 Copyright © 2026 Oliver Bross OM0RX. Licensed under GPL-3.0-only.
 
-![OM0RX-xCat v0.2.0 showing the two-line VFO status](docs/OM0RX-xCat-v0.2.0-public.png)
+![OM0RX-xCat v0.5.1 connected to the Remote Station Agent](docs/OM0RX-xCat-v0.5.1.jpg)
 
 ## Features
 
@@ -49,26 +53,14 @@ Copyright © 2026 Oliver Bross OM0RX. Licensed under GPL-3.0-only.
 
 ## Install
 
-Download `OM0RX-xCat-v0.2.0.zip` from GitHub Releases, expand it, and move
+Download `OM0RX-xCat-v0.5.1-macOS.zip` from GitHub Releases, expand it, and move
 `OM0RX-xCat.app` to `/Applications`. The release is signed with the Developer
 ID certificate for Oliver Bross. See the release notes for notarization status.
 
-The current source tree builds version 0.4.0 with Remote Station Agent support
-and the native RUMlogNG-to-FLEX panadapter spot bridge.
-Build 4 adds an explicit **Reconnect Agent** action in both the main window and
-menu-bar panel. Reconnect refreshes the authenticated HTTPS/WebSocket session
-without using the application Stop path or sending station-control commands.
-Build 5 removes the Mac-side commissioning/alarm command latch. When **Enable
-full CAT and station control** is selected, xCat forwards every command that the
-agent advertises and presents commissioning, route, and alarm information as
-operator advisories. The Windows agent remains the authoritative hardware and
-station-policy endpoint.
-Build 6 adds the complete Station configuration editor, rich live station
-monitor, and an **Undock Monitor** window. Open it from the menu-bar panel or
-with **Monitor** in the main window; it shares the existing connection and does
-not create a second radio session.
-Build 7 adds the independent Mac rotator subsystem and the wide radio-plus-rotator
-monitor. See [`docs/ROTATOR.md`](docs/ROTATOR.md).
+Version 0.5.1 includes Remote Station Agent support, the native
+RUMlogNG-to-FLEX panadapter spot bridge, the independent Mac rotator subsystem,
+and the wide radio-plus-rotator station monitor. See
+[`docs/ROTATOR.md`](docs/ROTATOR.md).
 Remote Agent transport health and radio-telemetry readiness are displayed
 separately, so a stale radio advisory does not masquerade as a reconnecting
 HTTPS/WebSocket session.
@@ -76,7 +68,8 @@ The main window is organized into compact **Status**, **Activity**, **Spots**,
 **Station**, and **Configuration** tabs. Each tab fits within the window without a
 page-level scrollbar, and connection health is always shown with both color
 and text.
-The published v0.2.0 release predates that transport.
+The main configuration window can be restored from the menu-bar panel or
+station monitor even after it has been minimized.
 
 On first use:
 
@@ -145,6 +138,13 @@ configuration.
   native SmartLink path.
 - **Simulator** supports safe protocol testing without a radio.
 
+## Requirements
+
+- macOS 14 or newer on Apple Silicon
+- RUMlogNG for the CAT/spot workflows
+- A FlexRadio reachable through local SmartSDR, native SmartLink, supervised
+  legacy xCAT, or the OM0RX Remote Station Agent
+
 ## Safety and scope
 
 Transmit and CW commands are disabled by default for both CAT and RigCtlD.
@@ -154,7 +154,7 @@ not transport or supervise RF audio.
 
 The tested SmartLink path uses the radio's advertised public or UPnP-forwarded
 TLS/TCP endpoint. UDP NAT hole punching is not implemented, so radios reachable
-only through hole punching are outside v0.2.0's verified scope.
+only through hole punching are outside the verified scope.
 
 In Remote Station Agent mode every frequency/mode route change, receive/transmit
 VFO selection, split change, PTT/tune, XIT, CWX, and RF-power write goes only to
@@ -175,15 +175,14 @@ The packaging script requires a valid `Developer ID Application` certificate,
 builds the release binary, enables hardened runtime, signs the app, and verifies
 the signature.
 
-## Verification performed for v0.2.0
+## Verification performed for v0.5.1
 
 - Unit tests for CAT, RigCtlD, split RX/TX reporting, SmartLink authentication
   request construction, broker parsing, and SmartSDR command responses.
-- Native SmartLink authentication and refresh-token relaunch.
-- SmartLink broker discovery, WAN TLS validation, and exact-station binding on
-  a FLEX-8400 running SmartSDR 4.2.20.
-- Live frequency/mode state through OM0RX-xCat into RUMlogNG with legacy xCAT
-  stopped.
+- Remote Station Agent connection, live status telemetry, and loopback CAT and
+  RigCtlD readback.
+- Minimize and restore of the main configuration window from the station
+  monitor.
 - Developer ID signing and hardened-runtime verification.
 
 Live RF transmit was intentionally not exercised during automated acceptance.

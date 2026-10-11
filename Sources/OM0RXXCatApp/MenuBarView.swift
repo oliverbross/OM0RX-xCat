@@ -312,7 +312,7 @@ struct MenuBarView: View {
 
     private func openMainWindow() {
         openWindow(id: "main")
-        NSApplication.shared.activate(ignoringOtherApps: true)
+        MainConfigurationWindow.restore()
     }
 
     private func openDetachedMonitor() {
