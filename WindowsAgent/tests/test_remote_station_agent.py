@@ -1,3 +1,4 @@
+import asyncio
 import json
 import time
 from asyncio import run
@@ -329,6 +330,9 @@ class FakeFlex:
         self.calls.append(("spot", arguments))
         return True
 
+    def close(self):
+        self.calls.append(("close",))
+
     def get_slice_states(self):
         return [
             {
@@ -375,6 +379,14 @@ class FakeCoordinator:
         self.calls.append("recover")
         return {"recovery_required": False}
 
+    async def stop(self):
+        self.calls.append("stop")
+
+
+class FakeElecraft:
+    async def stop(self):
+        return None
+
 
 def _runtime(tmp_path):
     runtime = RemoteStationRuntime(_config(tmp_path))
@@ -394,6 +406,63 @@ def _runtime(tmp_path):
 def test_remote_flex_poll_is_fast_enough_for_live_monitoring():
     assert FLEX_SNAPSHOT_WINDOW_SECONDS <= 0.2
     assert FLEX_POLL_IDLE_SECONDS <= 0.05
+
+
+def test_accessory_follow_does_not_block_radio_or_queue_obsolete_targets(tmp_path):
+    async def scenario():
+        runtime = _runtime(tmp_path)
+        entered = asyncio.Event()
+        release = asyncio.Event()
+        followed = []
+
+        async def slow_follow(frequency):
+            followed.append(frequency)
+            entered.set()
+            await release.wait()
+
+        runtime.coordinator.follow_observed_radio_route = slow_follow
+        runtime._schedule_route_follow()
+        await asyncio.wait_for(entered.wait(), 1)
+        first = runtime._route_follow_task
+        # The next radio observation remains publishable while accessories wait.
+        runtime._update_radio_snapshot({"freq": 14.074, "mode": "DIGU", "mox": True})
+        assert runtime.radio_snapshot["mox"] is True
+        runtime.radio_snapshot["frequency"] = 7.195
+        runtime._schedule_route_follow()
+        assert runtime._route_follow_task is first
+        assert followed == [14.074]
+        release.set()
+        await first
+        runtime._schedule_route_follow()
+        await runtime._route_follow_task
+        assert followed == [14.074, 7.195]
+
+    run(scenario())
+
+
+def test_shutdown_waits_for_in_flight_route_follow(tmp_path):
+    async def scenario():
+        runtime = _runtime(tmp_path)
+        runtime.elecraft = FakeElecraft()
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        async def slow_follow(_frequency):
+            entered.set()
+            await release.wait()
+
+        runtime.coordinator.follow_observed_radio_route = slow_follow
+        runtime._schedule_route_follow()
+        await asyncio.wait_for(entered.wait(), 1)
+        stopping = asyncio.create_task(runtime.stop())
+        await asyncio.sleep(0)
+        assert stopping.done() is False
+        release.set()
+        await asyncio.wait_for(stopping, 1)
+        assert runtime._route_follow_task is None
+        assert "stop" in runtime.coordinator.calls
+
+    run(scenario())
 
 
 def test_transient_startup_recovery_retries_from_fresh_receive_evidence(tmp_path):
