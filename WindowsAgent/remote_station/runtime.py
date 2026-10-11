@@ -65,6 +65,8 @@ class RemoteStationRuntime:
         self.last_error: str | None = None
         self._poll_task: asyncio.Task | None = None
         self._route_follow_task: asyncio.Task | None = None
+        self._route_follow_observed_at = 0.0
+        self._route_follow_scheduled_at = 0.0
         self._stop_event = asyncio.Event()
         self._command_lock = asyncio.Lock()
         self._revision = 0
@@ -154,6 +156,7 @@ class RemoteStationRuntime:
                     )
                 )
                 if levels:
+                    route_observed_at = time.monotonic()
                     route_ready = self._update_radio_snapshot(levels)
                     self.elecraft.observe_radio_tx_state(
                         self.radio_snapshot.get("mox"),
@@ -167,7 +170,7 @@ class RemoteStationRuntime:
                         try:
                             recovered = await self._retry_safe_recovery_if_ready()
                             if recovered:
-                                self._schedule_route_follow()
+                                self._schedule_route_follow(route_observed_at)
                         except Exception as exc:  # noqa: BLE001 - keep healthy FLEX state visible
                             self.last_error = f"Accessory route follow failed: {exc}"
                             logger.warning(self.last_error)
@@ -209,18 +212,26 @@ class RemoteStationRuntime:
             except TimeoutError:
                 pass
 
-    def _schedule_route_follow(self) -> None:
+    def _schedule_route_follow(self, observed_at: float | None = None) -> None:
         # Serial accessory readbacks can take seconds. Keep radio/MOX telemetry
         # flowing during them, with at most one follower and no queued old QSYs.
         # The coordinator revalidates the latest observed route at its existing
         # checkpoints; the next poll picks up any newer target after completion.
         if self._route_follow_task and not self._route_follow_task.done():
             return
+        self._route_follow_observed_at = observed_at or time.monotonic()
+        self._route_follow_scheduled_at = time.monotonic()
         self._route_follow_task = asyncio.create_task(
             self._follow_latest_route(), name="remote_station_route_follow"
         )
 
     async def _follow_latest_route(self) -> None:
+        started = time.monotonic()
+        logger.info(
+            "Accessory route task timing radio_to_schedule_ms=%.1f schedule_wait_ms=%.1f",
+            max(0.0, (self._route_follow_scheduled_at - self._route_follow_observed_at) * 1000),
+            max(0.0, (started - self._route_follow_scheduled_at) * 1000),
+        )
         try:
             await self.coordinator.follow_observed_radio_route(
                 self.radio_snapshot.get("frequency")
@@ -231,6 +242,11 @@ class RemoteStationRuntime:
             logger.warning(self.last_error)
         finally:
             self._revision += 1
+            logger.info(
+                "Accessory route task timing completed_ms=%.1f revision=%d",
+                (time.monotonic() - started) * 1000,
+                self._revision,
+            )
 
     async def _retry_safe_recovery_if_ready(self) -> bool:
         """Retry a transient startup recovery only from fresh receive evidence.
