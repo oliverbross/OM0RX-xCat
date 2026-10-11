@@ -13,6 +13,8 @@ Copyright © 2026 Oliver Bross OM0RX. Licensed under GPL-3.0-only.
 
 ![OM0RX-xCat v0.5.1 connected to the Remote Station Agent](docs/OM0RX-xCat-v0.5.1.jpg)
 
+Current published release: [OM0RX-xCat 0.5.1](https://github.com/oliverbross/OM0RX-xCat/releases/tag/v0.5.1).
+
 ## Features
 
 - Native Apple Silicon Swift/SwiftUI application for macOS 14 or later.
@@ -53,9 +55,11 @@ Copyright © 2026 Oliver Bross OM0RX. Licensed under GPL-3.0-only.
 
 ## Install
 
-Download `OM0RX-xCat-v0.5.1-macOS.zip` from GitHub Releases, expand it, and move
-`OM0RX-xCat.app` to `/Applications`. The release is signed with the Developer
-ID certificate for Oliver Bross. See the release notes for notarization status.
+Download `OM0RX-xCat-v0.5.1-macOS.zip` from the
+[OM0RX-xCat 0.5.1 release](https://github.com/oliverbross/OM0RX-xCat/releases/tag/v0.5.1),
+expand it, and move `OM0RX-xCat.app` to `/Applications`. The release is signed
+with the Developer ID certificate for Oliver Bross. It is not Apple-notarized;
+see the release notes for the first-launch instructions and SHA-256 checksum.
 
 Version 0.5.1 includes Remote Station Agent support, the native
 RUMlogNG-to-FLEX panadapter spot bridge, the independent Mac rotator subsystem,
