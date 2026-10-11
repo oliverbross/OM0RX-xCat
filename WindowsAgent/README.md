@@ -66,6 +66,14 @@ fails closed if fresh hardware state cannot be proven. Commission only after
 the physical route, antenna matrix, key-interrupt path, and drive table have
 been verified.
 
+The authenticated `set_frequency_mode` command applies mode before frequency,
+requests one bounded FLEX slice refresh, and publishes the new frequency/mode
+pair only after both values have matching readback. During that confirmation
+window MOX and interlock telemetry remain live, while accessory route following
+is paused so clients cannot act on a mixed old/new route. A successful explicit
+Operate request remains operator intent across safe retunes until an explicit
+Standby request clears it; prohibited bands still force verified standby.
+
 ## Maintenance and tests
 
 Run the complete Windows Agent tests from this directory with:
