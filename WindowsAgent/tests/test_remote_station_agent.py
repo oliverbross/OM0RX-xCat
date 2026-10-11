@@ -535,12 +535,32 @@ def test_remote_frequency_and_mode_share_one_guarded_route_transaction(tmp_path)
         ("send", "slice tune 0 3.698000"),
         ("send", "sub slice all"),
     ]
+    assert result["timing_ms"]["queue"] >= 0
+    assert result["timing_ms"]["execution"] >= 0
+    assert result["timing_ms"]["total"] >= result["timing_ms"]["execution"]
     assert result["state"]["radio"]["route_change_pending"] == {
         "frequency_hz": 3_698_000,
         "mode": "LSB",
         "vfo": "A",
         "age_seconds": pytest.approx(0.0, abs=0.05),
     }
+
+
+def test_remote_frequency_mode_skips_redundant_mode_but_refreshes_subscription(tmp_path):
+    runtime = _runtime(tmp_path)
+    result = run(
+        runtime.execute(
+            "xlog-frequency-mode-unchanged-0001",
+            "set_frequency_mode",
+            {"frequency_hz": 14_080_000, "mode": "DIGU", "vfo": "A"},
+        )
+    )
+
+    assert result["success"] is True
+    assert runtime.flex.calls == [
+        ("send", "slice tune 0 14.080000"),
+        ("send", "sub slice all"),
+    ]
 
 
 def test_atomic_frequency_mode_publication_waits_for_coherent_flex_state(tmp_path):
