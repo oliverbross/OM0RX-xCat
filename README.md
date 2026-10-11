@@ -129,6 +129,25 @@ task. The second installs the interactive tray controller and station widget;
 they monitor and manage the same Python agent and are not additional radio
 controllers.
 
+### Windows user interface
+
+The tray controller and widget run as normal Windows applications with no
+visible PowerShell console. Installing the tray startup task also adds
+**OM0RX Remote Station Agent** to the Windows Start menu, so normal operation
+does not require a terminal or manual JSON editing.
+
+| Surface | What it provides |
+| --- | --- |
+| Tray icon and details | Sanitized FLEX, KPA500, KAT500, route, and alarm status; start, stop, and confirmed restart of the controller; access to the log, settings, and widget. |
+| Settings | FLEX/station selection, KPA/KAT serial ports, antenna routing, per-band PA and barefoot power limits, digital-mode limits, tuner policy, security, and commissioning. Saves are validated and backed up before activation. |
+| Station widget | A movable, resizable, always-on-top monitor with `XX.XXX.XXX MHz` frequency display, VFO A/B, RX/TX state, RF drive, measured PA output, SWR, temperature, voltage/current, tuner state, route, policy, alarms, and a configuration button. |
+| Start menu shortcut | Opens the existing tray details window, or starts the tray when it is not already running; it never creates a second hardware controller. |
+
+The screenshot near the top of this README shows OM0RX-xCat connected to the
+Windows Remote Station Agent. For the complete Windows UI, configuration,
+startup, testing, and removal reference, see the
+[Windows Agent overview](WindowsAgent/README.md).
+
 In an Administrator PowerShell, publish the loopback service privately through
 Tailscale:
 
