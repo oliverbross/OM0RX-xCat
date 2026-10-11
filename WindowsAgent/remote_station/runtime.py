@@ -68,6 +68,8 @@ class RemoteStationRuntime:
         self._revision = 0
         self._last_radio_observation = 0.0
         self._last_recovery_attempt = 0.0
+        self._active_config_fingerprint = config.fingerprint()
+        self._saved_config_fingerprint = self._active_config_fingerprint
         self._idempotency: OrderedDict[str, tuple[str, dict[str, Any]]] = OrderedDict()
 
     async def start(self) -> None:
@@ -87,6 +89,7 @@ class RemoteStationRuntime:
             lambda: self.radio_snapshot,
             digital_guard=lambda: None,
             recovery_required=True,
+            policy_source=self.config.station_policy_source(),
         )
         try:
             await self.coordinator.recover_safe_state()
@@ -126,6 +129,11 @@ class RemoteStationRuntime:
     @property
     def revision(self) -> int:
         return self._revision
+
+    def note_saved_config(self, config: AgentConfig) -> None:
+        """Expose that a validated saved profile is pending process restart."""
+        self._saved_config_fingerprint = config.fingerprint()
+        self._revision += 1
 
     async def _poll_loop(self) -> None:
         while not self._stop_event.is_set():
@@ -348,6 +356,15 @@ class RemoteStationRuntime:
                     "started_at": self.started_at,
                     "uptime_seconds": max(0.0, time.time() - self.started_at),
                     "last_error": self.last_error,
+                    "config": {
+                        "path": str(self.config.path),
+                        "active_fingerprint": self._active_config_fingerprint,
+                        "saved_fingerprint": self._saved_config_fingerprint,
+                        "restart_required": (
+                            self._saved_config_fingerprint
+                            != self._active_config_fingerprint
+                        ),
+                    },
                 },
                 "radio": self.radio_snapshot,
                 "elecraft": elecraft,
