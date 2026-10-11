@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "om0rx-remote-station-agent"
+version = "1.0.0"
+description = "Independent Windows controller for the OM0RX FLEX/Elecraft station"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "GPL-3.0-only"
+authors = [{ name = "Oliver Bross", email = "oliver@bross.eu" }]
+dependencies = [
+  "fastapi==0.143.0",
+  "uvicorn[standard]==0.54.0",
+  "websockets==17.2",
+  "pyserial==3.5",
+]
+
+[project.optional-dependencies]
+dev = ["httpx==0.28.1", "pytest==9.1.1", "ruff==0.17.0"]
+
+[tool.setuptools]
+packages = ["remote_station", "radio_control", "services"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100

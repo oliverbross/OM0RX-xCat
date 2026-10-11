@@ -1,0 +1,41 @@
+name: Windows Agent
+
+on:
+  push:
+    paths:
+      - "WindowsAgent/**"
+      - ".github/workflows/windows-agent.yml"
+  pull_request:
+    paths:
+      - "WindowsAgent/**"
+      - ".github/workflows/windows-agent.yml"
+
+jobs:
+  test:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: WindowsAgent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: WindowsAgent/requirements-dev.txt
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+      - run: python -m ruff check --select F,E9 .
+      - run: python -m compileall -q remote_station radio_control services
+      - name: Parse PowerShell scripts
+        shell: pwsh
+        run: |
+          $errors = @()
+          Get-ChildItem scripts -Filter *.ps1 | ForEach-Object {
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              $_.FullName,
+              [ref]$null,
+              [ref]$errors
+            )
+          }
+          if ($errors.Count) { $errors | Format-List; exit 1 }

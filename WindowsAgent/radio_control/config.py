@@ -1,0 +1,42 @@
+"""Process-local station settings populated by ``remote_station.AgentConfig``.
+
+The independent Windows agent deliberately does not import the former OM0RX
+application configuration system.  Defaults fail closed until a validated
+agent configuration is applied at runtime.
+"""
+
+FLEX_TCP_HOST = "127.0.0.1"
+FLEX_TCP_PORT = 4992
+FLEX_SLICE_ID = 0
+FLEX_ANTENNA_POLICY: dict = {"enabled": False, "bands": {}}
+
+KPA500_ENABLED = False
+KPA500_PORT = ""
+KPA500_BAUDRATE = 38400
+KPA500_TEMPERATURE_MAX_C = None
+KPA500_VOLTAGE_MIN_V = None
+KPA500_VOLTAGE_MAX_V = None
+
+KAT500_ENABLED = False
+KAT500_PORT = ""
+KAT500_BAUDRATE = 38400
+KAT500_ANTENNA_POLICY: dict = {}
+KAT500_ANTENNA_NAMES: dict = {}
+
+ELECRAFT_FOLLOW_RADIO = True
+STATION_COORDINATOR_COMMISSIONED = False
+STATION_AMPLIFIER_ALLOWED_BANDS: list[str] = []
+STATION_AMPLIFIER_DRIVE_W: dict[str, int] = {}
+STATION_BAREFOOT_DRIVE_W: dict[str, int] = {}
+STATION_DIGITAL_AMPLIFIER_ALLOWED_BANDS: list[str] = []
+STATION_DIGITAL_AMPLIFIER_DRIVE_W: dict[str, int] = {}
+DIGITAL_KPA_POLICY = "standby"
+
+STATION_ROUTE_VERIFY_TTL_SECONDS = 10.0
+STATION_OPERATE_CACHE_MAX_AGE_SECONDS = 15.0
+STATION_TUNE_POWER_W = 20
+STATION_TUNE_TARGET_SWR = 1.5
+STATION_TUNE_ABORT_SWR = 3.0
+STATION_TUNE_TIMEOUT_SECONDS = 30.0
+STATION_TELEMETRY_INTERVAL_SECONDS = 5.0
+STATION_TELEMETRY_RETENTION_DAYS = 7

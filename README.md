@@ -78,12 +78,11 @@ station monitor even after it has been minimized.
 ## Windows Remote Station Agent
 
 The downloadable OM0RX-xCat archive contains the **macOS application only**.
-The Windows-side **OM0RX Remote Station Agent** is a separate component in the
-[`oliverbross/om0rx-radio-control`](https://github.com/oliverbross/om0rx-radio-control)
-public repository. A standalone Windows `.exe` or MSI installer is not currently
-published, so deploy the Python agent from source and use the supplied PowerShell
-scripts to create its configuration, scheduled task, tray controller, station
-widget, and private Tailscale endpoint.
+The Windows-side **OM0RX Remote Station Agent** source is maintained in this
+repository under [`WindowsAgent/`](WindowsAgent/). A standalone Windows `.exe`
+or MSI installer is not currently published, so deploy the Python agent from
+source and use the supplied PowerShell scripts to create its configuration,
+scheduled task, tray controller, station widget, and private Tailscale endpoint.
 
 The Windows agent is the sole owner of the FLEX TCP connection and the
 KPA500/KAT500 serial ports. xCat connects to that agent over authenticated
@@ -107,11 +106,11 @@ Install Python 3.11 or newer, clone the Windows repository, and run the
 following commands in PowerShell from its project directory:
 
 ```powershell
-git clone https://github.com/oliverbross/om0rx-radio-control.git
-cd om0rx-radio-control
-python -m pip install -r requirements-remote-agent.txt
-.\scripts\remote_agent\init_remote_agent.ps1
-python -m remote_station check
+git clone https://github.com/oliverbross/OM0RX-xCat.git
+cd OM0RX-xCat\WindowsAgent
+.\scripts\setup_remote_agent.ps1
+.\scripts\init_remote_agent.ps1 -Python .\.venv\Scripts\python.exe
+.\.venv\Scripts\python.exe -m remote_station check
 ```
 
 Review the generated station configuration carefully. In particular, confirm
@@ -120,9 +119,9 @@ routing, per-band amplifier eligibility, power limits, and commissioning
 state. Validate receive-only operation interactively before installing startup:
 
 ```powershell
-.\scripts\remote_agent\run_remote_agent.ps1 -LogLevel info
-.\scripts\remote_agent\install_remote_agent_startup.ps1
-.\scripts\remote_agent\install_remote_agent_tray_startup.ps1
+.\scripts\run_remote_agent.ps1 -Python .\.venv\Scripts\python.exe -LogLevel info
+.\scripts\install_remote_agent_startup.ps1 -Python .\.venv\Scripts\python.exe
+.\scripts\install_remote_agent_tray_startup.ps1 -Python .\.venv\Scripts\python.exe
 ```
 
 The first installer creates the hidden **OM0RX Remote Station Agent** scheduled
@@ -134,7 +133,7 @@ In an Administrator PowerShell, publish the loopback service privately through
 Tailscale:
 
 ```powershell
-.\scripts\remote_agent\configure_tailscale_serve.ps1
+.\scripts\configure_tailscale_serve.ps1
 ```
 
 Do not enable Tailscale Funnel or forward the agent port on a public router.
@@ -143,8 +142,8 @@ Tailscale Serve, paste the generated `server.control_token`, save, and start.
 xCat stores the token in macOS Keychain and does not place it in the URL.
 
 See the complete
-[Windows deployment and commissioning guide](https://github.com/oliverbross/om0rx-radio-control/blob/main/docs/REMOTE_STATION_AGENT.md)
-(GitHub access required) and the
+[Windows deployment and commissioning guide](WindowsAgent/docs/REMOTE_STATION_AGENT.md)
+and the
 [xCat client protocol guide](docs/REMOTE_AGENT_CLIENT.md). Users without access
 to the Windows source can use xCat's direct local-network SmartSDR, native
 SmartLink, or Simulator mode instead.

@@ -5,6 +5,11 @@ This project contains a new implementation informed by protocol and packaging
 work from software owned by Oliver Bross, including OM0RX Flex Client,
 RUMlog-Wavelog-Bridge, and Flex-WavelogGate.
 
+The Windows Remote Station Agent was migrated from Oliver Bross's
+`om0rx-radio-control` repository at commit
+`303ed2ada204172c2fc689337fa753ce29707d3f`. Its original authorship and
+GPL-3.0-only licensing are retained.
+
 SmartLink protocol behavior was cross-checked against AetherSDR, an independent
 GPL-3.0 implementation. OM0RX-xCat's Swift implementation is original to this
 project; no AetherSDR source files are included.

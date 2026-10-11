@@ -45,14 +45,13 @@ input validation, but it does not require station commissioning because it
 cannot change RF state. The Windows runtime maps the request to the existing
 `FlexCtl.add_spot` SmartSDR command path.
 
-## Windows handoff
+## Windows verification
 
-Fetch branch `codex/remote-agent-flex-spots` from
-`https://github.com/oliverbross/om0rx-radio-control.git`, verify the pushed SHA
-reported by the Mac task, run
-`uv run --extra dev pytest -q tests/smoke/test_remote_station_agent.py`, then
-restart the Remote Station Agent. Confirm `/api/v1/state` advertises
-`add_spot`. Do not paste or log the bearer token.
+Use the agent source in [`../WindowsAgent`](../WindowsAgent), run
+`.\.venv\Scripts\python.exe -m pytest -q` from that directory, then perform a
+controlled Remote Station Agent restart when lifecycle work has been
+authorized. Confirm `/api/v1/state` advertises `add_spot`. Do not paste or log
+the bearer token.
 
 After the Mac application is running, a RUMlog DX spot should increment the
 Received and Forwarded counters and appear on the FLEX panadapter. This

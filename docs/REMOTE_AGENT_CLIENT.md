@@ -4,7 +4,7 @@ OM0RX-xCat 0.5.1 includes a connection mode for the independent Windows OM0RX
 Remote Station Agent. The Windows process remains the sole owner of the
 FLEX-8400, KPA500, and KAT500 hardware connections. The Windows agent is
 source-deployed from
-[`oliverbross/om0rx-radio-control`](https://github.com/oliverbross/om0rx-radio-control);
+[WindowsAgent](../WindowsAgent/);
 that repository is public. It is not bundled in the macOS xCat archive and no
 standalone Windows `.exe` or MSI installer is currently published, so deploy it
 from source using the supplied PowerShell scripts.
@@ -12,7 +12,7 @@ from source using the supplied PowerShell scripts.
 ## Configure
 
 1. Configure and start the Windows agent using its
-[deployment guide](https://github.com/oliverbross/om0rx-radio-control/blob/main/docs/REMOTE_STATION_AGENT.md).
+[deployment guide](../WindowsAgent/docs/REMOTE_STATION_AGENT.md).
 2. Publish only its loopback listener with Tailscale Serve. Do not enable
    Funnel or forward port 8840 on the public router.
 3. In OM0RX-xCat select **Remote Station Agent**.

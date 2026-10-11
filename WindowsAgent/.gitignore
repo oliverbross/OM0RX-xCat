@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.log
+agent.json
+widget.json
+*.bak
+*.token
+*.secret
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
